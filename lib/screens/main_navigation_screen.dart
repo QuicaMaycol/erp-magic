@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'dashboard_screen.dart';
 import 'users_management_screen.dart';
 import '../models/user_model.dart';
+import '../models/order_model.dart';
 import '../services/auth_service.dart';
+import '../services/order_service.dart';
 import '../widgets/premium_qc_panel.dart';
 import '../widgets/generator_view.dart';
 import '../widgets/editor_view.dart';
+import '../widgets/trash_view.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -76,6 +80,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         view: EditorView(currentUser: user),
         roles: [UserRole.admin, UserRole.qc, UserRole.editor],
       ),
+      _TabItem(
+        title: 'Papelera',
+        icon: const Icon(Icons.delete_outline),
+        selectedIcon: const Icon(Icons.delete),
+        view: TrashView(),
+        roles: [UserRole.admin, UserRole.qc],
+      ),
     ].where((tab) => tab.roles.contains(user.role)).toList();
   }
 
@@ -106,6 +117,27 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       );
     }
 
+<<<<<<< HEAD
+=======
+    Widget buildProfileAvatar({double radius = 20, double fontSize = 16}) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: const Color(0xFF7C3AED),
+        child: Text(
+          _currentUser?.name.isNotEmpty == true 
+              ? _currentUser!.name[0].toUpperCase() 
+              : 'U',
+          style: TextStyle(
+            color: Colors.white, 
+            fontWeight: FontWeight.bold,
+            fontSize: fontSize,
+          ),
+        ),
+      );
+    }
+
+    // Asegurar que el índice no se salga de rango si cambia el rol
+>>>>>>> 19588d2 (feat: implementar filtros de estado y ordenamiento en Calidad, Recepción, Generación y Edición)
     if (_selectedIndex >= userTabs.length) {
       _selectedIndex = 0;
     }
@@ -146,6 +178,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 20.0),
                 child: Column(
                   children: [
+<<<<<<< HEAD
                     buildProfileAvatar(radius: 32, fontSize: 24),
                     const SizedBox(height: 12),
                     SizedBox(
@@ -174,12 +207,32 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                             ),
                           ),
                         ],
+=======
+                    buildProfileAvatar(radius: 28, fontSize: 22),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: 90,
+                      child: Text(
+                        _currentUser?.name ?? '',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+>>>>>>> 19588d2 (feat: implementar filtros de estado y ordenamiento en Calidad, Recepción, Generación y Edición)
                       ),
                     ),
                   ],
                 ),
               ),
+<<<<<<< HEAD
               minWidth: 100,
+=======
+              minWidth: 100, // Menú más ancho
+>>>>>>> 19588d2 (feat: implementar filtros de estado y ordenamiento en Calidad, Recepción, Generación y Edición)
               selectedIndex: _selectedIndex,
               onDestinationSelected: (index) {
                 setState(() => _selectedIndex = index);
@@ -292,3 +345,4 @@ class _InicioView extends StatelessWidget {
     );
   }
 }
+
