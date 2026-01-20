@@ -27,6 +27,13 @@ class OrderModel {
   final DateTime? editionStartedAt;
   final DateTime? editionEndedAt;
   final DateTime createdAt;
+  
+  // Nuevos campos opcionales
+  final String? country;
+  final double? price;
+  final String? phone;
+  final String? paymentMethod;
+  final String? product;
 
   OrderModel({
     this.id,
@@ -46,6 +53,11 @@ class OrderModel {
     this.editionStartedAt,
     this.editionEndedAt,
     DateTime? createdAt,
+    this.country,
+    this.price,
+    this.phone,
+    this.paymentMethod,
+    this.product,
   }) : createdAt = createdAt ?? DateTime.now();
 
   // Lógica de Urgencia (Puntos de color)
@@ -136,6 +148,11 @@ class OrderModel {
         editionStartedAt: json['edition_started_at'] != null ? DateTime.parse(json['edition_started_at']) : null,
         editionEndedAt: json['edition_ended_at'] != null ? DateTime.parse(json['edition_ended_at']) : null,
         createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : DateTime.now(),
+        country: json['country'],
+        price: json['price'] != null ? double.tryParse(json['price'].toString()) : null,
+        phone: json['phone'],
+        paymentMethod: json['payment_method'],
+        product: json['product'],
       );
     } catch (e) {
       // Fallback en caso de error crítico de parseo
@@ -147,6 +164,56 @@ class OrderModel {
         observations: e.toString(),
       );
     }
+  }
+
+  OrderModel copyWith({
+    int? id,
+    String? clientName,
+    String? scriptText,
+    String? observations,
+    DateTime? deliveryDueAt,
+    OrderStatus? status,
+    String? generatorId,
+    String? editorId,
+    String? scriptFileUrl,
+    String? baseAudioUrl,
+    String? finalAudioUrl,
+    String? projectFileUrl,
+    DateTime? generationStartedAt,
+    DateTime? generationEndedAt,
+    DateTime? editionStartedAt,
+    DateTime? editionEndedAt,
+    DateTime? createdAt,
+    String? country,
+    double? price,
+    String? phone,
+    String? paymentMethod,
+    String? product,
+  }) {
+    return OrderModel(
+      id: id ?? this.id,
+      clientName: clientName ?? this.clientName,
+      scriptText: scriptText ?? this.scriptText,
+      observations: observations ?? this.observations,
+      deliveryDueAt: deliveryDueAt ?? this.deliveryDueAt,
+      status: status ?? this.status,
+      generatorId: generatorId ?? this.generatorId,
+      editorId: editorId ?? this.editorId,
+      scriptFileUrl: scriptFileUrl ?? this.scriptFileUrl,
+      baseAudioUrl: baseAudioUrl ?? this.baseAudioUrl,
+      finalAudioUrl: finalAudioUrl ?? this.finalAudioUrl,
+      projectFileUrl: projectFileUrl ?? this.projectFileUrl,
+      generationStartedAt: generationStartedAt ?? this.generationStartedAt,
+      generationEndedAt: generationEndedAt ?? this.generationEndedAt,
+      editionStartedAt: editionStartedAt ?? this.editionStartedAt,
+      editionEndedAt: editionEndedAt ?? this.editionEndedAt,
+      createdAt: createdAt ?? this.createdAt,
+      country: country ?? this.country,
+      price: price ?? this.price,
+      phone: phone ?? this.phone,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      product: product ?? this.product,
+    );
   }
 
   Map<String, dynamic> toJson() => {
@@ -163,8 +230,13 @@ class OrderModel {
     'final_audio_url': finalAudioUrl,
     'project_file_url': projectFileUrl,
     'generation_started_at': generationStartedAt?.toIso8601String(),
-    'generation_ended_at': generationEndedAt?.toIso8601String(),
+     'generation_ended_at': generationEndedAt?.toIso8601String(),
     'edition_started_at': editionStartedAt?.toIso8601String(),
     'edition_ended_at': editionEndedAt?.toIso8601String(),
+    'country': country,
+    'price': price,
+    'phone': phone,
+    'payment_method': paymentMethod,
+    'product': product,
   };
 }

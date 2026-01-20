@@ -117,28 +117,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       );
     }
 
-<<<<<<< HEAD
-=======
-    Widget buildProfileAvatar({double radius = 20, double fontSize = 16}) {
-      return CircleAvatar(
-        radius: radius,
-        backgroundColor: const Color(0xFF7C3AED),
-        child: Text(
-          _currentUser?.name.isNotEmpty == true 
-              ? _currentUser!.name[0].toUpperCase() 
-              : 'U',
-          style: TextStyle(
-            color: Colors.white, 
-            fontWeight: FontWeight.bold,
-            fontSize: fontSize,
-          ),
-        ),
-      );
-    }
-
     // Asegurar que el índice no se salga de rango si cambia el rol
->>>>>>> 19588d2 (feat: implementar filtros de estado y ordenamiento en Calidad, Recepción, Generación y Edición)
     if (_selectedIndex >= userTabs.length) {
+
       _selectedIndex = 0;
     }
 
@@ -178,7 +159,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 20.0),
                 child: Column(
                   children: [
-<<<<<<< HEAD
                     buildProfileAvatar(radius: 32, fontSize: 24),
                     const SizedBox(height: 12),
                     SizedBox(
@@ -207,33 +187,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                             ),
                           ),
                         ],
-=======
-                    buildProfileAvatar(radius: 28, fontSize: 22),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: 90,
-                      child: Text(
-                        _currentUser?.name ?? '',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
->>>>>>> 19588d2 (feat: implementar filtros de estado y ordenamiento en Calidad, Recepción, Generación y Edición)
                       ),
                     ),
                   ],
                 ),
               ),
-<<<<<<< HEAD
-              minWidth: 100,
-=======
               minWidth: 100, // Menú más ancho
->>>>>>> 19588d2 (feat: implementar filtros de estado y ordenamiento en Calidad, Recepción, Generación y Edición)
               selectedIndex: _selectedIndex,
+
               onDestinationSelected: (index) {
                 setState(() => _selectedIndex = index);
                 if (userTabs[index].title == 'Recepción') {

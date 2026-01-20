@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart'; // Importante para tipos de archivo
 import '../models/order_model.dart';
 import '../models/user_model.dart';
 import '../services/order_service.dart';
+import '../services/n8n_service.dart'; // Servicio N8n
 import 'qc_order_card.dart';
 
 class GeneratorView extends StatefulWidget {
+// ... resto de imports igual
   final UserModel currentUser;
   const GeneratorView({super.key, required this.currentUser});
 
@@ -15,6 +18,7 @@ class GeneratorView extends StatefulWidget {
 
 class _GeneratorViewState extends State<GeneratorView> {
   final OrderService _orderService = OrderService();
+  final N8nService _n8nService = N8nService(); // Instancia del servicio
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   OrderStatus? _statusFilter;
@@ -178,7 +182,7 @@ class _GeneratorViewState extends State<GeneratorView> {
                         children: [
                           const Icon(Icons.check_circle, color: Colors.green, size: 20),
                           const SizedBox(width: 12),
-                          const Expanded(child: Text("Audio cargado correctamente", style: TextStyle(color: Colors.green, fontSize: 13))),
+                          Expanded(child: Text("Audio cargado: ${tempAudioUrl!.split('/').last}", style: const TextStyle(color: Colors.green, fontSize: 13), overflow: TextOverflow.ellipsis)),
                           IconButton(
                             icon: const Icon(Icons.play_arrow, color: Colors.white),
                             onPressed: () => _orderService.openUrl(tempAudioUrl),
@@ -197,16 +201,50 @@ class _GeneratorViewState extends State<GeneratorView> {
                     child: OutlinedButton.icon(
                       onPressed: isUploading ? null : () async {
                         setDialogState(() => isUploading = true);
-                        final url = await _orderService.pickAndUploadFile('audios');
-                        setDialogState(() {
-                          if (url != null) tempAudioUrl = url;
-                          isUploading = false;
-                        });
+                        
+                        // 1. Selección local del archivo
+                        FilePickerResult? result = await FilePicker.platform.pickFiles(
+                          type: FileType.custom,
+                          allowedExtensions: ['mp3', 'wav', 'm4a'],
+                        );
+
+                        if (result != null) {
+                           final file = result.files.first;
+                           print("Seleccionado audio: ${file.name} (${file.size} bytes)"); // LOG EXTRA
+                           try {
+                             // 2. Subida a n8n
+                             print("Invocando N8nService para subir audio..."); // LOG EXTRA
+                             final n8nUrl = await _n8nService.uploadFile(
+                               clientName: order.clientName,
+                               orderId: order.id.toString(),
+                               file: file,
+                               structuralReference: 'base_audio_url', 
+                             );
+                             print("Respuesta N8n recibida: $n8nUrl"); // LOG EXTRA
+
+                             if (n8nUrl != null) {
+                               setDialogState(() {
+                                 tempAudioUrl = n8nUrl;
+                                 isUploading = false;
+                               });
+                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Audio subido a n8n correctamente"), backgroundColor: Colors.green));
+                             } else {
+                               // Si n8n no devuelve URL (fallo en flujo de retorno), no podemos mostrarlo.
+                               setDialogState(() => isUploading = false);
+                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Audio enviado, pero n8n no devolvió el enlace."), backgroundColor: Colors.orange));
+                             }
+                           } catch (e) {
+                             setDialogState(() => isUploading = false);
+                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error al subir: $e"), backgroundColor: Colors.red));
+                           }
+                        } else {
+                          setDialogState(() => isUploading = false);
+                        }
                       },
                       icon: isUploading 
                           ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.upload_file),
-                      label: Text(tempAudioUrl == null ? "SUBIR AUDIO" : "REEMPLAZAR AUDIO"),
+                      label: Text(tempAudioUrl == null ? "SUBIR AUDIO (MP3/WAV)" : "REEMPLAZAR AUDIO"),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.white,
                         side: BorderSide(color: Colors.white.withOpacity(0.2)),
@@ -341,6 +379,7 @@ class _GeneratorViewState extends State<GeneratorView> {
                     itemBuilder: (context, index) {
                       return QCOrderCard(
                         order: orders[index],
+                        showAssigners: false,
                         onTap: () => _showGenerationDialog(orders[index]),
                       );
                     },

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/order_model.dart';
 import '../models/user_model.dart';
 import '../services/order_service.dart';
 import '../services/auth_service.dart';
+import '../services/n8n_service.dart';
 import '../widgets/order_card_premium.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -16,6 +18,7 @@ class DashboardScreen extends StatefulWidget {
 class DashboardScreenState extends State<DashboardScreen> {
   final OrderService _orderService = OrderService();
   final AuthService _authService = AuthService();
+  final N8nService _n8nService = N8nService();
   final TextEditingController _searchController = TextEditingController();
   
   UserModel? _currentUser;
@@ -129,16 +132,46 @@ class DashboardScreenState extends State<DashboardScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildDetailRow("CLIENTE", order.clientName),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                     Expanded(child: _buildDetailRow("INGRESO", DateFormat('dd/MM - HH:mm').format(order.createdAt))),
-                     const SizedBox(width: 16),
-                     Expanded(child: _buildDetailRow("ENTREGA", DateFormat('dd/MM - HH:mm').format(order.deliveryDueAt))),
-                  ],
-                ),
-                const SizedBox(height: 20),
+                 _buildDetailRow("CLIENTE", order.clientName),
+                 const SizedBox(height: 12),
+                 if (order.product != null && order.product!.isNotEmpty) ...[
+                   _buildDetailRow("PRODUCTO", order.product!),
+                   const SizedBox(height: 12),
+                 ],
+                 if ((order.country != null && order.country!.isNotEmpty) || (order.price != null)) ...[
+                   Row(
+                     children: [
+                        if (order.country != null && order.country!.isNotEmpty)
+                          Expanded(child: _buildDetailRow("PAÍS", order.country!)),
+                        if (order.country != null && order.country!.isNotEmpty && order.price != null)
+                          const SizedBox(width: 16),
+                        if (order.price != null)
+                          Expanded(child: _buildDetailRow("PRECIO", "\$${order.price!.toStringAsFixed(2)}")),
+                     ],
+                   ),
+                   const SizedBox(height: 12),
+                 ],
+                 if ((order.phone != null && order.phone!.isNotEmpty) || (order.paymentMethod != null && order.paymentMethod!.isNotEmpty)) ...[
+                   Row(
+                     children: [
+                        if (order.phone != null && order.phone!.isNotEmpty)
+                          Expanded(child: _buildDetailRow("CELULAR", order.phone!)),
+                        if (order.phone != null && order.phone!.isNotEmpty && order.paymentMethod != null && order.paymentMethod!.isNotEmpty)
+                          const SizedBox(width: 16),
+                        if (order.paymentMethod != null && order.paymentMethod!.isNotEmpty)
+                          Expanded(child: _buildDetailRow("MEDIO DE PAGO", order.paymentMethod!)),
+                     ],
+                   ),
+                   const SizedBox(height: 12),
+                 ],
+                 Row(
+                   children: [
+                      Expanded(child: _buildDetailRow("INGRESO", DateFormat('dd/MM - HH:mm').format(order.createdAt))),
+                      const SizedBox(width: 16),
+                      Expanded(child: _buildDetailRow("ENTREGA", DateFormat('dd/MM - HH:mm').format(order.deliveryDueAt))),
+                   ],
+                 ),
+                 const SizedBox(height: 20),
                 
                 const Text("TEXTO / GUION", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
                 const SizedBox(height: 6),
@@ -267,8 +300,15 @@ class DashboardScreenState extends State<DashboardScreen> {
     final clientController = TextEditingController(text: order?.clientName);
     final scriptController = TextEditingController(text: order?.scriptText);
     final obsController = TextEditingController(text: order?.observations);
+    final countryController = TextEditingController(text: order?.country);
+    final priceController = TextEditingController(text: order?.price?.toString());
+    final phoneController = TextEditingController(text: order?.phone);
+    final paymentController = TextEditingController(text: order?.paymentMethod);
+    final productController = TextEditingController(text: order?.product);
     DateTime selectedDate = order?.deliveryDueAt ?? DateTime.now().add(const Duration(hours: 4));
-    String? uploadedFileUrl = order?.scriptFileUrl;
+    
+    PlatformFile? selectedFile;
+    bool hasExistingFile = order?.scriptFileUrl != null && order!.scriptFileUrl!.isNotEmpty;
     bool isUploading = false;
 
     showDialog(
@@ -301,16 +341,36 @@ class DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 12),
                     _buildField(scriptController, 'Texto / Guion', maxLines: 3, icon: Icons.description_outlined),
                     const SizedBox(height: 12),
+                    _buildField(productController, 'Producto', icon: Icons.inventory_2_outlined),
+                    const SizedBox(height: 12),
                     
-                    // Botón de subida de archivo
+                    Row(
+                      children: [
+                        Expanded(child: _buildField(countryController, 'País', icon: Icons.public)),
+                        const SizedBox(width: 12),
+                         Expanded(child: _buildField(priceController, 'Precio', icon: Icons.attach_money, keyboardType: TextInputType.number)),
+                       ],
+                     ),
+                     const SizedBox(height: 12),
+                     Row(
+                       children: [
+                         Expanded(child: _buildField(phoneController, 'WhatsApp/Celular', icon: Icons.phone_android, keyboardType: TextInputType.phone)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _buildField(paymentController, 'Medio de Pago', icon: Icons.payment)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    
+                    // Botón de selección de archivo (n8n integration)
                     InkWell(
                       onTap: isUploading ? null : () async {
-                        setDialogState(() => isUploading = true);
-                        final url = await _orderService.pickAndUploadFile('documents');
-                        if (mounted) {
+                        FilePickerResult? result = await FilePicker.platform.pickFiles(
+                          type: FileType.custom,
+                          allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'mp3'],
+                        );
+                        if (result != null) {
                           setDialogState(() {
-                            uploadedFileUrl = url;
-                            isUploading = false;
+                            selectedFile = result.files.first;
                           });
                         }
                       },
@@ -320,33 +380,37 @@ class DashboardScreenState extends State<DashboardScreen> {
                           color: Colors.white.withOpacity(0.05),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: uploadedFileUrl != null ? Colors.green.withOpacity(0.5) : Colors.transparent
+                            color: (selectedFile != null || hasExistingFile) ? Colors.green.withOpacity(0.5) : Colors.transparent
                           ),
                         ),
                         child: Row(
                           children: [
                             if (isUploading)
-                              const SizedBox(
-                                width: 20, 
-                                height: 20, 
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF7C3AED))
-                              )
+                               const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF7C3AED)))
                             else
                               Icon(
-                                uploadedFileUrl != null ? Icons.check_circle : Icons.attach_file,
-                                color: uploadedFileUrl != null ? Colors.green : const Color(0xFF7C3AED),
+                                (selectedFile != null || hasExistingFile) ? Icons.check_circle : Icons.attach_file,
+                                color: (selectedFile != null || hasExistingFile) ? Colors.green : const Color(0xFF7C3AED),
                                 size: 20
                               ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                uploadedFileUrl != null ? "Archivo adjunto correctamente" : "Adjuntar Word o PDF",
+                                selectedFile != null 
+                                  ? "Seleccionado: ${selectedFile!.name}" 
+                                  : (hasExistingFile ? "Archivo adjunto previamente" : "Adjuntar Archivo"),
                                 style: TextStyle(
-                                  color: uploadedFileUrl != null ? Colors.green : Colors.white70,
+                                  color: (selectedFile != null || hasExistingFile) ? Colors.green : Colors.white70,
                                   fontSize: 14
                                 ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            if (selectedFile != null && !isUploading)
+                              IconButton(
+                                icon: const Icon(Icons.close, color: Colors.white38, size: 18),
+                                onPressed: () => setDialogState(() => selectedFile = null),
+                              )
                           ],
                         ),
                       ),
@@ -389,12 +453,10 @@ class DashboardScreenState extends State<DashboardScreen> {
                                 confirmText: 'ACEPTAR',
                                 helpText: 'SELECCIONAR HORA',
                                 builder: (context, child) {
-                                  // Forzamos Locale 'en_US' para garantizar formato 12 horas estricto
                                   return Localizations.override(
                                     context: context,
                                     locale: const Locale('en', 'US'),
                                     child: MediaQuery(
-                                      // Reforzamos con alwaysUse24HourFormat false
                                       data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
                                       child: Theme(
                                         data: Theme.of(context).copyWith(
@@ -402,34 +464,20 @@ class DashboardScreenState extends State<DashboardScreen> {
                                           timePickerTheme: TimePickerThemeData(
                                             backgroundColor: const Color(0xFF1E1E24),
                                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                            
-                                            // Estilo del Dial (Reloj)
                                             dialBackgroundColor: const Color(0xFF2A2A35),
                                             dialHandColor: const Color(0xFF7C3AED),
                                             dialTextColor: Colors.white,
-                                            
-                                            // Estilos de Hora/Minuto seleccionados
-                                            hourMinuteShape: const RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.all(Radius.circular(12)),
-                                            ),
+                                            hourMinuteShape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                                             hourMinuteColor: MaterialStateColor.resolveWith((states) => 
                                                 states.contains(MaterialState.selected) ? const Color(0xFF7C3AED).withOpacity(0.2) : const Color(0xFF2A2A35)),
                                             hourMinuteTextColor: MaterialStateColor.resolveWith((states) => 
                                                 states.contains(MaterialState.selected) ? const Color(0xFF7C3AED) : Colors.white),
-                                            
-                                            // Estilos AM/PM
-                                            dayPeriodShape: const RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.all(Radius.circular(8)),
-                                            ),
+                                            dayPeriodShape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
                                             dayPeriodColor: MaterialStateColor.resolveWith((states) => 
                                                 states.contains(MaterialState.selected) ? const Color(0xFF7C3AED) : Colors.transparent),
                                             dayPeriodTextColor: MaterialStateColor.resolveWith((states) => 
                                                 states.contains(MaterialState.selected) ? Colors.white : Colors.white70),
                                             dayPeriodBorderSide: const BorderSide(color: Color(0xFF7C3AED)),
-                                            
-                                            // Botones
-                                            cancelButtonStyle: ButtonStyle(foregroundColor: MaterialStateProperty.all(Colors.white70)),
-                                            confirmButtonStyle: ButtonStyle(foregroundColor: MaterialStateProperty.all(const Color(0xFF7C3AED))),
                                           ),
                                         ),
                                         child: child!,
@@ -471,23 +519,80 @@ class DashboardScreenState extends State<DashboardScreen> {
                   if (clientController.text.isEmpty) return;
                   
                   try {
-                    // Mostrar indicador de carga
-                    setDialogState(() => isUploading = true); // Reusamos la variable isUploading para bloquear el botón
+                    setDialogState(() => isUploading = true);
 
+                    // 1. Guardar Metadata en Supabase (Sin archivo aún)
                     final orderData = OrderModel(
                       id: order?.id,
                       clientName: clientController.text.trim(),
                       scriptText: scriptController.text.trim(),
                       observations: obsController.text.trim(),
-                      deliveryDueAt: selectedDate,
+                      country: countryController.text.trim(),
+                      price: double.tryParse(priceController.text.trim()),
+                       phone: phoneController.text.trim(),
+                       paymentMethod: paymentController.text.trim(),
+                       product: productController.text.trim(),
+                       deliveryDueAt: selectedDate,
                       status: order?.status ?? OrderStatus.PENDIENTE,
-                      scriptFileUrl: uploadedFileUrl, // Guardamos la URL del archivo
+                      scriptFileUrl: order?.scriptFileUrl, // Mantener anterior si existe
                     );
                     
+                    OrderModel savedOrder;
                     if (order?.id == null) {
-                      await _orderService.createOrder(orderData);
+                      savedOrder = await _orderService.createOrder(orderData);
                     } else {
                       await _orderService.updateOrder(orderData);
+                      savedOrder = orderData; // Para edición, usamos el modelo actual con ID
+                    }
+
+                    // 2. Enviar a n8n si hay archivo nuevo
+                    if (selectedFile != null) {
+                      // Regla simple: si es mp3 -> base_audio, si no -> script_file
+                      String ref = 'script_file_url';
+                      if (selectedFile!.extension == 'mp3' || selectedFile!.extension == 'wav') {
+                        ref = 'base_audio_url';
+                      }
+
+                      try {
+                        final n8nUrl = await _n8nService.uploadFile(
+                          clientName: savedOrder.clientName,
+                          orderId: savedOrder.id.toString(),
+                          file: selectedFile!,
+                          structuralReference: ref,
+                        );
+
+                        if (n8nUrl != null) {
+                          // Si n8n devolvió URL, actualizamos Supabase
+                          print("Actualizando orden con URL de n8n: $n8nUrl");
+                          OrderModel updatedOrder;
+                          if (ref == 'script_file_url') {
+                             updatedOrder = savedOrder.copyWith(scriptFileUrl: n8nUrl);
+                          } else {
+                             updatedOrder = savedOrder.copyWith(baseAudioUrl: n8nUrl);
+                          }
+                          await _orderService.updateOrder(updatedOrder);
+                        } else {
+                           print("n8n no devolvió URL, el archivo se envió pero no se enlazó.");
+                        }
+
+                      } catch (n8nError) {
+                        print("Advertencia n8n: $n8nError");
+                        // No lanzamos error para permitir que el flujo de guardado continúe
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Orden guardada, pero hubo un problema enviando el archivo a n8n.'),
+                              backgroundColor: Colors.orange,
+                              duration: Duration(seconds: 5),
+                            )
+                          );
+                        }
+                        // Regresamos aquí para cerrar el diálogo
+                        if (!mounted) return;
+                        Navigator.pop(context);
+                        refreshData();
+                        return;
+                      }
                     }
                     
                     if (!mounted) return;
@@ -497,11 +602,11 @@ class DashboardScreenState extends State<DashboardScreen> {
                       const SnackBar(content: Text('Orden guardada correctamente'), backgroundColor: Colors.green)
                     );
                   } catch (e) {
-                    print("Error al guardar orden: $e");
+                    print("Error: $e");
                     if (mounted) {
-                      setDialogState(() => isUploading = false); // Desbloquear si falla
+                      setDialogState(() => isUploading = false);
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error al guardar: $e'), backgroundColor: Colors.red)
+                        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red)
                       );
                     }
                   }
@@ -524,10 +629,11 @@ class DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildField(TextEditingController ctrl, String label, {int maxLines = 1, IconData? icon}) {
+  Widget _buildField(TextEditingController ctrl, String label, {int maxLines = 1, IconData? icon, TextInputType keyboardType = TextInputType.text}) {
     return TextField(
       controller: ctrl,
       maxLines: maxLines,
+      keyboardType: keyboardType,
       style: const TextStyle(color: Colors.white, fontSize: 14),
       decoration: InputDecoration(
         labelText: label,
@@ -720,6 +826,7 @@ class DashboardScreenState extends State<DashboardScreen> {
         
         // Chips de Estado
         _filterChip("TODO", null),
+        _filterChip("PENDIENTE", OrderStatus.PENDIENTE),
         _filterChip("GENERACIÓN", OrderStatus.EN_GENERACION),
         _filterChip("EDICIÓN", OrderStatus.EDICION),
         _filterChip("LISTO", OrderStatus.AUDIO_LISTO),

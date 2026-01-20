@@ -141,7 +141,7 @@ class OrderCardPremium extends StatelessWidget {
                     // 3. Bloque de Entrega (Derecha)
                     Container(
                       width: isWebGrid ? 80 : 100,
-                      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+                      padding: const EdgeInsets.fromLTRB(8, 40, 8, 20), // Más espacio arriba para el botón de opciones
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [

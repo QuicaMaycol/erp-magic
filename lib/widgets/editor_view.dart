@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/order_model.dart';
 import '../models/user_model.dart';
 import '../services/order_service.dart';
+import '../services/n8n_service.dart'; // Importamos N8nService
 import 'qc_order_card.dart';
 
 class EditorView extends StatefulWidget {
@@ -15,6 +17,7 @@ class EditorView extends StatefulWidget {
 
 class _EditorViewState extends State<EditorView> {
   final OrderService _orderService = OrderService();
+  final N8nService _n8nService = N8nService();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   OrderStatus? _statusFilter;
@@ -36,7 +39,9 @@ class _EditorViewState extends State<EditorView> {
 
   void _showEditionDialog(OrderModel order) {
     String? tempFinalAudioUrl = order.finalAudioUrl;
-    bool isUploading = false;
+    String? tempProjectUrl = order.projectFileUrl; 
+    bool isUploadingProject = false; // Estado independiente para Proyecto
+    bool isUploadingFinal = false;   // Estado independiente para Audio Final
     bool isProcessing = false;
 
     showDialog(
@@ -140,6 +145,90 @@ class _EditorViewState extends State<EditorView> {
                   const Divider(color: Colors.white10),
                   const SizedBox(height: 20),
 
+                  // Proyecto Editable
+                  const Text("ARCHIVO DE PROYECTO (.AUP3 / ZIP)", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                  const SizedBox(height: 8),
+                  if (tempProjectUrl != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.purple.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.folder_zip, color: Colors.purple, size: 20),
+                          const SizedBox(width: 12),
+                          const Expanded(child: Text("Proyecto cargado", style: TextStyle(color: Colors.purple, fontSize: 13))),
+                          IconButton(
+                            icon: const Icon(Icons.download, color: Colors.white),
+                            onPressed: () => _orderService.openUrl(tempProjectUrl),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                            onPressed: () => setDialogState(() => tempProjectUrl = null),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 45,
+                    child: OutlinedButton.icon(
+                      onPressed: (isUploadingProject || isUploadingFinal) ? null : () async {
+                        setDialogState(() => isUploadingProject = true);
+                        FilePickerResult? result = await FilePicker.platform.pickFiles(
+                          type: FileType.any, 
+                        );
+
+                        if (result != null) {
+                           try {
+                             final n8nUrl = await _n8nService.uploadFile(
+                               clientName: order.clientName,
+                               orderId: order.id.toString(),
+                               file: result.files.first,
+                               structuralReference: 'project_file_url', 
+                             );
+
+                             if (n8nUrl != null) {
+                               setDialogState(() {
+                                 tempProjectUrl = n8nUrl;
+                                 isUploadingProject = false;
+                               });
+                               // Guardar URL del proyecto inmediatamente
+                               await _orderService.updateOrder(order.copyWith(projectFileUrl: n8nUrl));
+                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Proyecto subido correctamente"), backgroundColor: Colors.green));
+                             } else {
+                               setDialogState(() => isUploadingProject = false);
+                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Proyecto enviado a n8n (sin enlace de retorno)"), backgroundColor: Colors.orange));
+                             }
+                           } catch (e) {
+                             setDialogState(() => isUploadingProject = false);
+                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
+                           }
+                        } else {
+                          setDialogState(() => isUploadingProject = false);
+                        }
+                      },
+                      icon: isUploadingProject 
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.upload_file),
+                      label: Text(tempProjectUrl == null ? "SUBIR PROYECTO EDITABLE" : "REEMPLAZAR PROYECTO"),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.purpleAccent,
+                        side: BorderSide(color: Colors.purpleAccent.withOpacity(0.5)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 24),
+                  const Divider(color: Colors.white10),
+                  const SizedBox(height: 20),
+
                   // Subida de Audio Final
                   const Text("AUDIO FINAL EDITADO", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
                   const SizedBox(height: 12),
@@ -174,15 +263,43 @@ class _EditorViewState extends State<EditorView> {
                     width: double.infinity,
                     height: 45,
                     child: OutlinedButton.icon(
-                      onPressed: isUploading ? null : () async {
-                        setDialogState(() => isUploading = true);
-                        final url = await _orderService.pickAndUploadFile('audios');
-                        setDialogState(() {
-                          if (url != null) tempFinalAudioUrl = url;
-                          isUploading = false;
-                        });
+                      onPressed: (isUploadingFinal || isUploadingProject) ? null : () async {
+                        setDialogState(() => isUploadingFinal = true);
+                        
+                        // Selección local del archivo
+                        FilePickerResult? result = await FilePicker.platform.pickFiles(
+                          type: FileType.custom,
+                          allowedExtensions: ['mp3', 'wav', 'm4a'],
+                        );
+
+                        if (result != null) {
+                           try {
+                             final n8nUrl = await _n8nService.uploadFile(
+                               clientName: order.clientName,
+                               orderId: order.id.toString(),
+                               file: result.files.first,
+                               structuralReference: 'final_audio_url', 
+                             );
+
+                             if (n8nUrl != null) {
+                               setDialogState(() {
+                                 tempFinalAudioUrl = n8nUrl;
+                                 isUploadingFinal = false;
+                               });
+                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Audio final subido a n8n correctamente"), backgroundColor: Colors.green));
+                             } else {
+                               setDialogState(() => isUploadingFinal = false);
+                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Audio enviado, pero n8n no devolvió el enlace."), backgroundColor: Colors.orange));
+                             }
+                           } catch (e) {
+                             setDialogState(() => isUploadingFinal = false);
+                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error al subir: $e"), backgroundColor: Colors.red));
+                           }
+                        } else {
+                          setDialogState(() => isUploadingFinal = false);
+                        }
                       },
-                      icon: isUploading 
+                      icon: isUploadingFinal 
                           ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.cloud_upload_outlined),
                       label: Text(tempFinalAudioUrl == null ? "SUBIR PRODUCTO FINAL" : "REEMPLAZAR ARCHIVO"),
@@ -320,6 +437,7 @@ class _EditorViewState extends State<EditorView> {
                     itemBuilder: (context, index) {
                       return QCOrderCard(
                         order: orders[index],
+                        showAssigners: false,
                         onTap: () => _showEditionDialog(orders[index]),
                       );
                     },

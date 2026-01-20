@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/production_order_model.dart';
 import '../services/production_services.dart';
-import '../widgets/order_card.dart';
+import '../../../../widgets/order_card.dart';
 
 class ReceptionScreenV2 extends StatefulWidget {
   const ReceptionScreenV2({super.key});
@@ -218,6 +218,7 @@ class _ReceptionScreenV2State extends State<ReceptionScreenV2> {
             ),
           ),
           _filterChip("TODO", null),
+          _filterChip("PENDIENTE", ProductionStatus.pendiente_calidad),
           _filterChip("GENERACIÓN", ProductionStatus.aprobado),
           _filterChip("EDICIÓN", ProductionStatus.listo_para_edicion),
           _filterChip("LISTO", ProductionStatus.audio_listo),

@@ -47,10 +47,14 @@ class OrderService {
   // Mantener compatibilidad con código existente
   Future<List<OrderModel>> getOrders(UserModel user) => fetchOrders();
 
-  Future<void> createOrder(OrderModel order) async {
-    await _supabase
+  Future<OrderModel> createOrder(OrderModel order) async {
+    final response = await _supabase
         .from('orders')
-        .insert(order.toJson());
+        .insert(order.toJson())
+        .select()
+        .single();
+    
+    return OrderModel.fromJson(response);
   }
 
   Future<void> updateOrder(OrderModel order) async {
@@ -209,20 +213,36 @@ class OrderService {
 
   /// Abre una URL en el navegador/visor del sistema
   Future<void> openUrl(String? url) async {
-    if (url == null) return;
+    if (url == null || url.trim().isEmpty) return;
     try {
-      final String lowerUrl = url.toLowerCase();
-      Uri uri = Uri.parse(url);
+      String processedUrl = url.trim();
+
+      // CORRECCIÓN: Si el "link" no parece un link (no tiene http), asumimos que es un ID de Google Drive
+      if (!processedUrl.startsWith('http')) {
+        print("Detectado posible ID de Drive: $processedUrl. Construyendo URL completa...");
+        processedUrl = 'https://drive.google.com/file/d/$processedUrl/view';
+      }
+
+      final String lowerUrl = processedUrl.toLowerCase();
+      Uri uri = Uri.parse(processedUrl);
       
-      // Si es un documento (Word, PDF, etc), usamos el visor de Google Docs para previsualizarlo
-      if (lowerUrl.contains('.doc') || lowerUrl.contains('.pdf') || lowerUrl.contains('.docx') || lowerUrl.contains('.txt')) {
-        uri = Uri.parse('https://docs.google.com/viewer?url=${Uri.encodeComponent(url)}');
+      // Si es un documento directo (Word, PDF) y no es ya un link de visualización de Drive/Docs,
+      // intentamos usar el visor de Google Docs para asegurar que se abra en el navegador móvil/web sin descargar.
+      // (Omitimos esto si ya es un link de drive.google.com para no romper la vista nativa de Drive)
+      if (!lowerUrl.contains('drive.google.com') && 
+          (lowerUrl.contains('.doc') || lowerUrl.contains('.pdf') || lowerUrl.contains('.docx') || lowerUrl.contains('.txt'))) {
+        uri = Uri.parse('https://docs.google.com/viewer?url=${Uri.encodeComponent(processedUrl)}');
       }
 
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
-        print("No se pudo abrir la URL: $url");
+        // Fallback: intentar lanzar sin validación estricta (a veces necesario para esquemas raros)
+        try {
+          await launchUrl(uri, mode: LaunchMode.platformDefault);
+        } catch (e) {
+          print("No se pudo abrir la URL: $processedUrl");
+        }
       }
     } catch (e) {
       print("Error al abrir URL: $e");
