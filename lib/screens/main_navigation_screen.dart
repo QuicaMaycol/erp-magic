@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:intl/intl.dart';
 import 'dashboard_screen.dart';
 import 'users_management_screen.dart';
@@ -282,26 +283,345 @@ class _TabItem {
   });
 }
 
-class _InicioView extends StatelessWidget {
+class _InicioView extends StatefulWidget {
   final UserModel user;
   const _InicioView({required this.user});
 
   @override
+  State<_InicioView> createState() => _InicioViewState();
+}
+
+class _InicioViewState extends State<_InicioView> {
+  final OrderService _orderService = OrderService();
+  final TextEditingController _searchController = TextEditingController();
+  DateTime _selectedDate = DateTime.now();
+  String _searchQuery = "";
+
+  final List<String> _days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+  @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text('¡Hola, ${user.name}!', 
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
-          const SizedBox(height: 8),
-          Text(user.role.name.toUpperCase(), 
-            style: const TextStyle(fontSize: 12, color: Colors.deepPurpleAccent, letterSpacing: 2)),
-          const SizedBox(height: 40),
-          const Icon(Icons.assessment_outlined, size: 80, color: Colors.white24),
-          const SizedBox(height: 16),
-          const Text('Resumen de Hoy', style: TextStyle(fontSize: 18, color: Colors.white38)),
-        ],
+    return StreamBuilder<List<OrderModel>>(
+      stream: _orderService.ordersStream,
+      builder: (context, snapshot) {
+        final allOrders = snapshot.data ?? [];
+        
+        // Métricas
+        final today = DateTime.now();
+        final ordersToday = allOrders.where((o) => 
+          o.createdAt.year == today.year && 
+          o.createdAt.month == today.month && 
+          o.createdAt.day == today.day).length;
+        
+        final pendingText = allOrders.where((o) => o.scriptText == null || o.scriptText!.isEmpty).length;
+        final deliveredToday = allOrders.where((o) => 
+          o.status == OrderStatus.AUDIO_LISTO && 
+          o.editionEndedAt != null &&
+          o.editionEndedAt!.day == today.day).length;
+
+        // Filtrar por día seleccionado (según día de ingreso / createdAt)
+        final filteredOrders = allOrders.where((o) {
+          final isSameDay = o.createdAt.year == _selectedDate.year &&
+                            o.createdAt.month == _selectedDate.month &&
+                            o.createdAt.day == _selectedDate.day;
+          
+          final matchesSearch = o.clientName.toLowerCase().contains(_searchQuery.toLowerCase());
+          return isSameDay && matchesSearch;
+        }).toList();
+
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1200),
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 30.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Hola, ${widget.user.name.isNotEmpty ? widget.user.name.split(' ')[0] : 'Usuario'}',
+                          style: TextStyle(
+                            fontSize: MediaQuery.of(context).size.width > 800 ? 36 : 28, 
+                            fontWeight: FontWeight.bold, 
+                            color: Colors.white, 
+                            letterSpacing: -0.5
+                          ),
+                        ),
+                        const Text(
+                          'Este es el pulso de tu negocio hoy.',
+                          style: TextStyle(fontSize: 16, color: Colors.white38),
+                        ),
+                        const SizedBox(height: 35),
+                        
+                        // Dashboard Superior (Glassmorphism)
+                        if (MediaQuery.of(context).size.width > 800)
+                          Row(
+                            children: [
+                              Expanded(child: _buildMetricCard('Pedidos Hoy', ordersToday.toString(), Icons.analytics_outlined, const Color(0xFF7C3AED))),
+                              Expanded(child: _buildMetricCard('Pend. Texto', pendingText.toString(), Icons.description_outlined, Colors.orangeAccent)),
+                              Expanded(child: _buildMetricCard('Listos Hoy', deliveredToday.toString(), Icons.check_circle_outline, Colors.greenAccent)),
+                              // Agregamos una cuarta para balancear en web
+                              Expanded(child: _buildMetricCard('Semana', allOrders.length.toString(), Icons.trending_up, Colors.blueAccent)),
+                            ],
+                          )
+                        else
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                _buildMetricCard('Pedidos Hoy', ordersToday.toString(), Icons.analytics_outlined, const Color(0xFF7C3AED)),
+                                _buildMetricCard('Pend. Texto', pendingText.toString(), Icons.description_outlined, Colors.orangeAccent),
+                                _buildMetricCard('Listos Hoy', deliveredToday.toString(), Icons.check_circle_outline, Colors.greenAccent),
+                              ],
+                            ),
+                          ),
+                        
+                        const SizedBox(height: 40),
+                        
+                        // Buscador y Selector en Web pueden ir en una fila
+                        if (MediaQuery.of(context).size.width > 800)
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: _buildSearchBar(),
+                              ),
+                              const SizedBox(width: 20),
+                              Expanded(
+                                flex: 2,
+                                child: _buildDaySelector(),
+                              ),
+                            ],
+                          )
+                        else ...[
+                          _buildSearchBar(),
+                          const SizedBox(height: 25),
+                          _buildDaySelector(),
+                        ],
+                        
+                        const SizedBox(height: 30),
+                      ],
+                    ),
+                  ),
+                ),
+                
+                // Lista de Pedidos
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  sliver: filteredOrders.isEmpty 
+                    ? const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(child: Text('No hay pedidos para este criterio', style: TextStyle(color: Colors.white24))),
+                      )
+                    : MediaQuery.of(context).size.width > 1000 
+                      ? SliverGrid(
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisExtent: 100,
+                            crossAxisSpacing: 20,
+                            mainAxisSpacing: 5,
+                          ),
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => _buildOrderCard(filteredOrders[index]),
+                            childCount: filteredOrders.length,
+                          ),
+                        )
+                      : SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => _buildOrderCard(filteredOrders[index]),
+                            childCount: filteredOrders.length,
+                          ),
+                        ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 100)),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: TextField(
+        controller: _searchController,
+        onChanged: (val) => setState(() => _searchQuery = val),
+        style: const TextStyle(color: Colors.white),
+        decoration: const InputDecoration(
+          hintText: 'Buscar cliente...',
+          hintStyle: TextStyle(color: Colors.white24),
+          prefixIcon: Icon(Icons.search, color: Colors.white38),
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(vertical: 15),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDaySelector() {
+    return SizedBox(
+      height: 50,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _days.length,
+        itemBuilder: (context, index) {
+          final isSelected = index == (_selectedDate.weekday - 1);
+          return GestureDetector(
+            onTap: () => setState(() => _selectedDate = DateTime.now().add(Duration(days: index - (DateTime.now().weekday - 1)))),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                color: isSelected ? const Color(0xFF7C3AED) : Colors.white.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(25),
+                border: Border.all(color: isSelected ? Colors.white24 : Colors.transparent),
+              ),
+              child: Center(
+                child: Text(
+                  _days[index],
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : Colors.white38,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMetricCard(String title, String value, IconData icon, Color color) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 150),
+      margin: const EdgeInsets.only(right: 15),
+      padding: const EdgeInsets.all(25),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: color, size: 28),
+              const SizedBox(height: 15),
+              Text(value, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+              Text(title, style: const TextStyle(fontSize: 12, color: Colors.white38, fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOrderCard(OrderModel order) {
+    Color statusColor;
+    String statusLabel;
+
+    // Lógica de colores del Excel
+    if (order.status == OrderStatus.AUDIO_LISTO) {
+      statusColor = Colors.greenAccent;
+      statusLabel = 'ENTREGADO';
+    } else if (order.status == OrderStatus.PENDIENTE && order.scriptText != null && order.scriptText!.isNotEmpty) {
+      statusColor = Colors.yellowAccent;
+      statusLabel = 'CON HORA';
+    } else if (order.scriptText == null || order.scriptText!.isEmpty) {
+      statusColor = Colors.orangeAccent;
+      statusLabel = 'FALTA TEXTO';
+    } else {
+      statusColor = const Color(0xFF00D1FF); // Celeste
+      statusLabel = 'PROCESANDO';
+    }
+
+    // Caso especial VANEDY (ejemplo basado en nombre o campo si existiera)
+    if (order.clientName.toUpperCase().contains('VANEDY')) {
+      statusColor = const Color(0xFFFF00FF); // Magenta
+      statusLabel = 'VANEDY';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 15),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: InkWell(
+        onTap: () {
+          // Navegar a detalle (usando la función que ya existe en MainNavigation si es posible o una nueva)
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              // Indicador lateral de color
+              Container(
+                width: 4,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  borderRadius: BorderRadius.circular(2),
+                  boxShadow: [
+                    BoxShadow(color: statusColor.withOpacity(0.5), blurRadius: 8, spreadRadius: 1),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      order.clientName,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      order.product ?? 'Servicio General',
+                      style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.5)),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    DateFormat('HH:mm').format(order.deliveryDueAt),
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white70),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                    child: Text(
+                      statusLabel,
+                      style: TextStyle(fontSize: 10, color: statusColor, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
