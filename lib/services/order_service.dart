@@ -149,6 +149,21 @@ class OrderService {
     }
   }
 
+  // Marcar como ENTREGADO
+  Future<void> markAsDelivered(int orderId) async {
+    final data = await _supabase
+        .from('orders')
+        .update({
+      'status': 'ENTREGADO',
+    })
+    .eq('id', orderId)
+    .select();
+
+    if ((data as List).isEmpty) {
+      throw Exception("No se pudo marcar como entregado el pedido #$orderId");
+    }
+  }
+
   // Actualizar el estado de una orden (útil para anulación/papelera)
   Future<void> updateOrderStatus(int orderId, OrderStatus status) async {
     await _supabase

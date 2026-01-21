@@ -332,6 +332,36 @@ class DashboardScreenState extends State<DashboardScreen> {
                   ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
                   : const Text("LISTO (APROBAR)"),
               ),
+            if (order.status == OrderStatus.AUDIO_LISTO && (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.recepcion))
+              ElevatedButton(
+                onPressed: isProcessing ? null : () async {
+                  setDialogState(() => isProcessing = true);
+                  try {
+                    await _orderService.markAsDelivered(order.id!);
+                    if (mounted) {
+                      Navigator.pop(context);
+                      refreshData();
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: const Text("✅ Pedido entregado al cliente"), 
+                        backgroundColor: const Color(0xFFFFEB3B).withOpacity(0.9),
+                        duration: const Duration(seconds: 3),
+                      ));
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      setDialogState(() => isProcessing = false);
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text("❌ No se pudo marcar como entregado"), 
+                        backgroundColor: Colors.redAccent
+                      ));
+                    }
+                  }
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFEB3B), foregroundColor: Colors.black),
+                child: isProcessing 
+                  ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black)) 
+                  : const Text("ENTREGAR PEDIDO"),
+              ),
           ],
         ),
       ),

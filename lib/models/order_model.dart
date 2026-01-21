@@ -6,6 +6,7 @@ enum OrderStatus {
   EDICION,
   EN_REVISION,
   AUDIO_LISTO,
+  ENTREGADO, // Nuevo estado
   ANULADO,
 }
 
@@ -100,6 +101,11 @@ class OrderModel {
           'color': const Color(0xFF10B981), // Verde (Tailwind Emerald 500 / Listo)
           'label': 'LISTO',
         };
+      case OrderStatus.ENTREGADO:
+        return {
+          'color': const Color(0xFFFFEB3B), // Amarillo Brillante
+          'label': 'ENTREGADO',
+        };
       case OrderStatus.ANULADO:
         return {
           'color': Colors.grey,
@@ -137,6 +143,7 @@ class OrderModel {
           if (normalized.contains('EDIC') || normalized.contains('EDIT')) return OrderStatus.EDICION;
           if (normalized.contains('LISTO') || normalized.contains('TERMINAD')) return OrderStatus.AUDIO_LISTO;
           if (normalized.contains('REVIS')) return OrderStatus.EN_REVISION;
+          if (normalized.contains('ENTREG')) return OrderStatus.ENTREGADO;
           if (normalized.contains('ANULA')) return OrderStatus.ANULADO;
           return OrderStatus.PENDIENTE;
         },

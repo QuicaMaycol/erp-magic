@@ -20,6 +20,7 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
   
   List<UserModel> _generators = [];
   List<UserModel> _editors = [];
+  UserModel? _currentUser;
   String _searchQuery = '';
   OrderStatus? _statusFilter;
   bool _sortByDelivery = false; // false = createdAt DESC, true = deliveryDueAt ASC
@@ -42,10 +43,12 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
   Future<void> _loadData() async {
     final gens = await _authService.getUsersByRole(UserRole.generador);
     final eds = await _authService.getUsersByRole(UserRole.editor);
+    final user = await _authService.getCurrentProfile();
     if (mounted) {
       setState(() {
         _generators = gens;
         _editors = eds;
+        _currentUser = user;
       });
     }
   }
@@ -352,37 +355,79 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
                               ? const CircularProgressIndicator(color: Colors.white) 
                               : const Text("LISTO (APROBAR CALIDAD)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                         )
-                      : ElevatedButton(
-                          onPressed: (tempGenId != null && tempEdId != null && !isProcessing && (order.status == OrderStatus.PENDIENTE || order.status == OrderStatus.EN_GENERACION)) 
-                              ? () async {
-                                  setDialogState(() => isProcessing = true);
-                                  try {
-                                    await _orderService.assignStaff(order.id!, tempGenId!, tempEdId!);
-                                    if (mounted) {
-                                      Navigator.pop(context);
-                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Pedido actualizado correctamente"), backgroundColor: Colors.green));
+                      : Column(
+                          children: [
+                            if (order.status == OrderStatus.AUDIO_LISTO && (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.recepcion))
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8.0),
+                                child: ElevatedButton(
+                                  onPressed: isProcessing ? null : () async {
+                                    setDialogState(() => isProcessing = true);
+                                    try {
+                                      await _orderService.markAsDelivered(order.id!);
+                                      if (mounted) {
+                                        Navigator.pop(context);
+                                        _loadData();
+                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                          content: const Text("✅ Pedido entregado al cliente"), 
+                                          backgroundColor: const Color(0xFFFFEB3B).withOpacity(0.9),
+                                        ));
+                                      }
+                                    } catch (e) {
+                                      if (mounted) {
+                                        setDialogState(() => isProcessing = false);
+                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                          content: Text("❌ No se pudo marcar como entregado"), 
+                                          backgroundColor: Colors.redAccent
+                                        ));
+                                      }
                                     }
-                                  } catch (e) {
-                                    setDialogState(() => isProcessing = false);
-                                  }
-                                } 
-                              : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF7C3AED),
-                            disabledBackgroundColor: Colors.white.withOpacity(0.05),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          child: isProcessing 
-                              ? const CircularProgressIndicator(color: Colors.white) 
-                              : Text(
-                                  (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.EDICION) 
-                                    ? "ORDEN PROCESADA" 
-                                    : "GENERAR ORDEN", 
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold, 
-                                    color: (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.EDICION) ? Colors.white24 : Colors.white
-                                  )
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFFFEB3B), 
+                                    foregroundColor: Colors.black,
+                                    minimumSize: const Size(double.infinity, 45),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  child: isProcessing 
+                                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black)) 
+                                    : const Text("ENTREGAR PEDIDO", style: TextStyle(fontWeight: FontWeight.bold)),
                                 ),
+                              ),
+                            ElevatedButton(
+                              onPressed: (tempGenId != null && tempEdId != null && !isProcessing && (order.status == OrderStatus.PENDIENTE || order.status == OrderStatus.EN_GENERACION)) 
+                                  ? () async {
+                                      setDialogState(() => isProcessing = true);
+                                      try {
+                                        await _orderService.assignStaff(order.id!, tempGenId!, tempEdId!);
+                                        if (mounted) {
+                                          Navigator.pop(context);
+                                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Pedido actualizado correctamente"), backgroundColor: Colors.green));
+                                        }
+                                      } catch (e) {
+                                        setDialogState(() => isProcessing = false);
+                                      }
+                                    } 
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF7C3AED),
+                                disabledBackgroundColor: Colors.white.withOpacity(0.05),
+                                minimumSize: const Size(double.infinity, 45),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: isProcessing 
+                                  ? const CircularProgressIndicator(color: Colors.white) 
+                                  : Text(
+                                      (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.EDICION || order.status == OrderStatus.ENTREGADO) 
+                                        ? "ORDEN PROCESADA" 
+                                        : "GENERAR ORDEN", 
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold, 
+                                        color: (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.EDICION || order.status == OrderStatus.ENTREGADO) ? Colors.white24 : Colors.white
+                                      )
+                                    ),
+                            ),
+                          ],
                         ),
                   )
                 ],

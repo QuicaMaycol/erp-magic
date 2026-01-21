@@ -288,6 +288,8 @@ class _TabItem {
   });
 }
 
+enum InicioViewMode { list, planner }
+
 class _InicioView extends StatefulWidget {
   final UserModel user;
   const _InicioView({required this.user});
@@ -301,6 +303,8 @@ class _InicioViewState extends State<_InicioView> {
   final TextEditingController _searchController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
   String _searchQuery = "";
+  InicioViewMode _viewMode = InicioViewMode.planner;
+  String _activeFilter = 'TODOS'; // Filtro por métrica (TODOS, URGENTES, LISTOS, ENTREGADOS)
 
   final List<String> _days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -318,14 +322,20 @@ class _InicioViewState extends State<_InicioView> {
           o.createdAt.month == today.month && 
           o.createdAt.day == today.day).length;
         
-        final pendingText = allOrders.where((o) => o.scriptText == null || o.scriptText!.isEmpty).length;
+        final urgentToday = allOrders.where((o) => 
+          o.status != OrderStatus.AUDIO_LISTO && 
+          o.status != OrderStatus.ENTREGADO &&
+          o.status != OrderStatus.ANULADO &&
+          o.deliveryDueAt.difference(o.createdAt).inHours < 24).length;
+          
+        final deliveredCount = allOrders.where((o) => o.status == OrderStatus.ENTREGADO).length;
         final deliveredToday = allOrders.where((o) => 
           o.status == OrderStatus.AUDIO_LISTO && 
           o.editionEndedAt != null &&
           o.editionEndedAt!.day == today.day).length;
 
         // Filtrar por día seleccionado (según día de ingreso / createdAt)
-        final filteredOrders = allOrders.where((o) {
+        var filteredOrders = allOrders.where((o) {
           final isSameDay = o.createdAt.year == _selectedDate.year &&
                             o.createdAt.month == _selectedDate.month &&
                             o.createdAt.day == _selectedDate.day;
@@ -333,6 +343,20 @@ class _InicioViewState extends State<_InicioView> {
           final matchesSearch = o.clientName.toLowerCase().contains(_searchQuery.toLowerCase());
           return isSameDay && matchesSearch;
         }).toList();
+
+        // Aplicar Filtro de Métricas
+        if (_activeFilter == 'URGENTES') {
+          filteredOrders = filteredOrders.where((o) => 
+            o.status != OrderStatus.AUDIO_LISTO && 
+            o.status != OrderStatus.ENTREGADO &&
+            o.status != OrderStatus.ANULADO &&
+            o.deliveryDueAt.difference(o.createdAt).inHours < 24
+          ).toList();
+        } else if (_activeFilter == 'LISTOS') {
+          filteredOrders = filteredOrders.where((o) => o.status == OrderStatus.AUDIO_LISTO).toList();
+        } else if (_activeFilter == 'ENTREGADOS') {
+          filteredOrders = filteredOrders.where((o) => o.status == OrderStatus.ENTREGADO).toList();
+        }
 
         return Center(
           child: ConstrainedBox(
@@ -345,14 +369,34 @@ class _InicioViewState extends State<_InicioView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Hola, ${widget.user.name.isNotEmpty ? widget.user.name.split(' ')[0] : 'Usuario'}',
-                          style: TextStyle(
-                            fontSize: MediaQuery.of(context).size.width > 800 ? 36 : 28, 
-                            fontWeight: FontWeight.bold, 
-                            color: Colors.white, 
-                            letterSpacing: -0.5
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Hola, ${widget.user.name.isNotEmpty ? widget.user.name.split(' ')[0] : 'Usuario'}',
+                              style: TextStyle(
+                                fontSize: MediaQuery.of(context).size.width > 800 ? 36 : 28, 
+                                fontWeight: FontWeight.bold, 
+                                color: Colors.white, 
+                                letterSpacing: -0.5
+                              ),
+                            ),
+                            // Selector de Vista
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                children: [
+                                  _buildViewToggleButton(InicioViewMode.list, Icons.view_headline),
+                                  const SizedBox(width: 4),
+                                  _buildViewToggleButton(InicioViewMode.planner, Icons.grid_view_rounded),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                         const Text(
                           'Este es el pulso de tu negocio hoy.',
@@ -364,11 +408,10 @@ class _InicioViewState extends State<_InicioView> {
                         if (MediaQuery.of(context).size.width > 800)
                           Row(
                             children: [
-                              Expanded(child: _buildMetricCard('Pedidos Hoy', ordersToday.toString(), Icons.analytics_outlined, const Color(0xFF7C3AED))),
-                              Expanded(child: _buildMetricCard('Pend. Texto', pendingText.toString(), Icons.description_outlined, Colors.orangeAccent)),
-                              Expanded(child: _buildMetricCard('Listos Hoy', deliveredToday.toString(), Icons.check_circle_outline, Colors.greenAccent)),
-                              // Agregamos una cuarta para balancear en web
-                              Expanded(child: _buildMetricCard('Semana', allOrders.length.toString(), Icons.trending_up, Colors.blueAccent)),
+                              Expanded(child: _buildMetricCard('Pedidos Hoy', ordersToday.toString(), Icons.analytics_outlined, const Color(0xFF7C3AED), onTap: () => setState(() => _activeFilter = 'TODOS'))),
+                              Expanded(child: _buildMetricCard('Urgentes Hoy', urgentToday.toString(), Icons.notification_important_rounded, Colors.orangeAccent, onTap: () => setState(() => _activeFilter = 'URGENTES'))),
+                              Expanded(child: _buildMetricCard('Listos Hoy', deliveredToday.toString(), Icons.check_circle_outline, Colors.greenAccent, onTap: () => setState(() => _activeFilter = 'LISTOS'))),
+                              Expanded(child: _buildMetricCard('Entregados', deliveredCount.toString(), Icons.handshake_outlined, Colors.yellowAccent, onTap: () => setState(() => _activeFilter = 'ENTREGADOS'))),
                             ],
                           )
                         else
@@ -376,70 +419,81 @@ class _InicioViewState extends State<_InicioView> {
                             scrollDirection: Axis.horizontal,
                             child: Row(
                               children: [
-                                _buildMetricCard('Pedidos Hoy', ordersToday.toString(), Icons.analytics_outlined, const Color(0xFF7C3AED)),
-                                _buildMetricCard('Pend. Texto', pendingText.toString(), Icons.description_outlined, Colors.orangeAccent),
-                                _buildMetricCard('Listos Hoy', deliveredToday.toString(), Icons.check_circle_outline, Colors.greenAccent),
+                                _buildMetricCard('Pedidos Hoy', ordersToday.toString(), Icons.analytics_outlined, const Color(0xFF7C3AED), onTap: () => setState(() => _activeFilter = 'TODOS')),
+                                _buildMetricCard('Urgentes Hoy', urgentToday.toString(), Icons.notification_important_rounded, Colors.orangeAccent, onTap: () => setState(() => _activeFilter = 'URGENTES')),
+                                _buildMetricCard('Listos Hoy', deliveredToday.toString(), Icons.check_circle_outline, Colors.greenAccent, onTap: () => setState(() => _activeFilter = 'LISTOS')),
                               ],
                             ),
                           ),
                         
                         const SizedBox(height: 40),
-                        
-                        // Buscador y Selector en Web pueden ir en una fila
-                        if (MediaQuery.of(context).size.width > 800)
-                          Row(
-                            children: [
-                              Expanded(
-                                flex: 3,
-                                child: _buildSearchBar(),
-                              ),
-                              const SizedBox(width: 20),
-                              Expanded(
-                                flex: 2,
-                                child: _buildDaySelector(),
-                              ),
-                            ],
-                          )
-                        else ...[
-                          _buildSearchBar(),
-                          const SizedBox(height: 25),
-                          _buildDaySelector(),
-                        ],
-                        
-                        const SizedBox(height: 30),
                       ],
                     ),
                   ),
                 ),
                 
-                // Lista de Pedidos
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  sliver: filteredOrders.isEmpty 
-                    ? const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(child: Text('No hay pedidos para este criterio', style: TextStyle(color: Colors.white24))),
-                      )
-                    : MediaQuery.of(context).size.width > 1000 
-                      ? SliverGrid(
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisExtent: 100,
-                            crossAxisSpacing: 20,
-                            mainAxisSpacing: 5,
-                          ),
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) => _buildOrderCard(filteredOrders[index]),
-                            childCount: filteredOrders.length,
-                          ),
+                if (_viewMode == InicioViewMode.planner)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                      child: _buildWeeklyPlanner(allOrders),
+                    ),
+                  )
+                else ...[
+                  // Buscador y Selector en Web pueden ir en una fila
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                      child: Column(
+                        children: [
+                          if (MediaQuery.of(context).size.width > 800)
+                            Row(
+                              children: [
+                                Expanded(flex: 3, child: _buildSearchBar()),
+                                const SizedBox(width: 20),
+                                Expanded(flex: 2, child: _buildDaySelector()),
+                              ],
+                            )
+                          else ...[
+                            _buildSearchBar(),
+                            const SizedBox(height: 25),
+                            _buildDaySelector(),
+                          ],
+                          const SizedBox(height: 30),
+                        ],
+                      ),
+                    ),
+                  ),
+                  
+                  // Lista de Pedidos
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    sliver: filteredOrders.isEmpty 
+                      ? const SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Center(child: Text('No hay pedidos para este criterio', style: TextStyle(color: Colors.white24))),
                         )
-                      : SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) => _buildOrderCard(filteredOrders[index]),
-                            childCount: filteredOrders.length,
+                      : MediaQuery.of(context).size.width > 1000 
+                        ? SliverGrid(
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              mainAxisExtent: 100,
+                              crossAxisSpacing: 20,
+                              mainAxisSpacing: 5,
+                            ),
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) => _buildOrderCard(filteredOrders[index]),
+                              childCount: filteredOrders.length,
+                            ),
+                          )
+                        : SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) => _buildOrderCard(filteredOrders[index]),
+                              childCount: filteredOrders.length,
+                            ),
                           ),
-                        ),
-                ),
+                  ),
+                ],
                 const SliverToBoxAdapter(child: SizedBox(height: 100)),
               ],
             ),
@@ -505,28 +559,50 @@ class _InicioViewState extends State<_InicioView> {
     );
   }
 
-  Widget _buildMetricCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      constraints: const BoxConstraints(minWidth: 150),
-      margin: const EdgeInsets.only(right: 15),
-      padding: const EdgeInsets.all(25),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, color: color, size: 28),
-              const SizedBox(height: 15),
-              Text(value, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
-              Text(title, style: const TextStyle(fontSize: 12, color: Colors.white38, fontWeight: FontWeight.w500)),
-            ],
+  Widget _buildMetricCard(String title, String value, IconData icon, Color color, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: () {
+        if (onTap != null) onTap();
+        // Si estamos en planificador y se pulsa una métrica, volver a lista para ver resultados
+        if (_viewMode == InicioViewMode.planner) {
+          setState(() => _viewMode = InicioViewMode.list);
+        }
+      },
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 140),
+        margin: const EdgeInsets.only(right: 15),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.03),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: _activeFilter == (title.contains('URGENTE') ? 'URGENTES' : title.contains('LISTO') ? 'LISTOS' : title.contains('ENTREGADO') ? 'ENTREGADOS' : 'TODOS') 
+                   ? color.withOpacity(0.3) 
+                   : Colors.white.withOpacity(0.05)
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, color: color, size: 28),
+                  const SizedBox(height: 12),
+                  Text(value, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white, height: 1.1)),
+                  const SizedBox(height: 4),
+                  Text(
+                    title.toUpperCase(), 
+                    style: const TextStyle(fontSize: 10, color: Colors.white38, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                    maxLines: 2,
+                    overflow: TextOverflow.visible,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -534,22 +610,17 @@ class _InicioViewState extends State<_InicioView> {
   }
 
   Widget _buildOrderCard(OrderModel order) {
-    Color statusColor;
-    String statusLabel;
+    final bool hasScript = (order.scriptText != null && order.scriptText!.isNotEmpty) || 
+                           (order.scriptFileUrl != null && order.scriptFileUrl!.isNotEmpty);
 
-    // Lógica de colores del Excel
-    if (order.status == OrderStatus.AUDIO_LISTO) {
-      statusColor = Colors.greenAccent;
-      statusLabel = 'ENTREGADO';
-    } else if (order.status == OrderStatus.PENDIENTE && order.scriptText != null && order.scriptText!.isNotEmpty) {
-      statusColor = Colors.yellowAccent;
-      statusLabel = 'CON HORA';
-    } else if (order.scriptText == null || order.scriptText!.isEmpty) {
+    final style = order.statusStyle;
+    Color statusColor = style['color'] as Color;
+    String statusLabel = style['label'] as String;
+
+    // Solo sobreescribimos si falta texto y no está listo ni entregado
+    if (!hasScript && order.status != OrderStatus.AUDIO_LISTO && order.status != OrderStatus.ENTREGADO && order.status != OrderStatus.ANULADO) {
       statusColor = Colors.orangeAccent;
       statusLabel = 'FALTA TEXTO';
-    } else {
-      statusColor = const Color(0xFF00D1FF); // Celeste
-      statusLabel = 'PROCESANDO';
     }
 
     // Caso especial VANEDY (ejemplo basado en nombre o campo si existiera)
@@ -627,6 +698,109 @@ class _InicioViewState extends State<_InicioView> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildViewToggleButton(InicioViewMode mode, IconData icon) {
+    final isSelected = _viewMode == mode;
+    return GestureDetector(
+      onTap: () => setState(() => _viewMode = mode),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF7C3AED) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(
+          icon,
+          color: isSelected ? Colors.white : Colors.white38,
+          size: 20,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeeklyPlanner(List<OrderModel> allOrders) {
+    // Calculamos el inicio de la semana (Lunes)
+    final now = DateTime.now();
+    final monday = now.subtract(Duration(days: now.weekday - 1));
+    
+    return Container(
+      height: 350,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Row(
+        children: List.generate(7, (index) {
+          final dayDate = monday.add(Duration(days: index));
+          final isToday = dayDate.day == now.day && dayDate.month == now.month && dayDate.year == now.year;
+          
+          final dayOrders = allOrders.where((o) => 
+            o.createdAt.day == dayDate.day && 
+            o.createdAt.month == dayDate.month && 
+            o.createdAt.year == dayDate.year
+          ).toList();
+
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedDate = dayDate;
+                  _viewMode = InicioViewMode.list;
+                });
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border(
+                    right: index < 6 ? BorderSide(color: Colors.white.withOpacity(0.05)) : BorderSide.none,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      _days[index],
+                      style: TextStyle(
+                        color: isToday ? const Color(0xFF7C3AED) : Colors.white38,
+                        fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: dayOrders.map((order) {
+                            return Container(
+                              width: double.infinity,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: order.statusStyle['color'],
+                                borderRadius: BorderRadius.circular(3),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: (order.statusStyle['color'] as Color).withOpacity(0.3),
+                                    blurRadius: 4,
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
       ),
     );
   }
