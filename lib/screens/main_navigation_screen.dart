@@ -81,13 +81,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         view: EditorView(currentUser: user),
         roles: [UserRole.admin, UserRole.qc, UserRole.editor],
       ),
-      _TabItem(
-        title: 'Papelera',
-        icon: const Icon(Icons.delete_outline),
-        selectedIcon: const Icon(Icons.delete),
-        view: TrashView(),
-        roles: [UserRole.admin, UserRole.qc],
-      ),
     ].where((tab) => tab.roles.contains(user.role)).toList();
   }
 
@@ -144,6 +137,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const UsersManagementScreen()),
+              ),
+            ),
+          if (isQC || isAdmin)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Papelera',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => Scaffold(
+                  appBar: AppBar(title: const Text('Papelera')),
+                  body: TrashView(),
+                )),
               ),
             ),
           IconButton(icon: const Icon(Icons.notifications_none_outlined), onPressed: () {}),

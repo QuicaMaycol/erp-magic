@@ -72,6 +72,7 @@ class DashboardScreenState extends State<DashboardScreen> {
         const PopupMenuItem(value: OrderStatus.PENDIENTE, child: Text('Pendiente')),
         const PopupMenuItem(value: OrderStatus.EN_GENERACION, child: Text('En Generación')),
         const PopupMenuItem(value: OrderStatus.EDICION, child: Text('En Edición')),
+        const PopupMenuItem(value: OrderStatus.EN_REVISION, child: Text('En Revisión')),
         const PopupMenuItem(value: OrderStatus.AUDIO_LISTO, child: Text('Listo')),
       ],
     );
@@ -118,169 +119,221 @@ class DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _showOrderDetail(OrderModel order) {
+    bool isProcessing = false;
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF16161A),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Detalle del Pedido #${order.id}', 
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: SizedBox(
-          width: 500,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                 _buildDetailRow("CLIENTE", order.clientName),
-                 const SizedBox(height: 12),
-                 if (order.product != null && order.product!.isNotEmpty) ...[
-                   _buildDetailRow("PRODUCTO", order.product!),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF1B1B21), // Fondo más sólido y elegante
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('Detalle del Pedido #${order.id}', 
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          content: SizedBox(
+            width: 500,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                   _buildDetailRow("CLIENTE", order.clientName),
                    const SizedBox(height: 12),
-                 ],
-                 if ((order.country != null && order.country!.isNotEmpty) || (order.price != null)) ...[
-                   Row(
-                     children: [
-                        if (order.country != null && order.country!.isNotEmpty)
-                          Expanded(child: _buildDetailRow("PAÍS", order.country!)),
-                        if (order.country != null && order.country!.isNotEmpty && order.price != null)
-                          const SizedBox(width: 16),
-                        if (order.price != null)
-                          Expanded(child: _buildDetailRow("PRECIO", "\$${order.price!.toStringAsFixed(2)}")),
-                     ],
-                   ),
-                   const SizedBox(height: 12),
-                 ],
-                 if ((order.phone != null && order.phone!.isNotEmpty) || (order.paymentMethod != null && order.paymentMethod!.isNotEmpty)) ...[
-                   Row(
-                     children: [
-                        if (order.phone != null && order.phone!.isNotEmpty)
-                          Expanded(child: _buildDetailRow("CELULAR", order.phone!)),
-                        if (order.phone != null && order.phone!.isNotEmpty && order.paymentMethod != null && order.paymentMethod!.isNotEmpty)
-                          const SizedBox(width: 16),
-                        if (order.paymentMethod != null && order.paymentMethod!.isNotEmpty)
-                          Expanded(child: _buildDetailRow("MEDIO DE PAGO", order.paymentMethod!)),
-                     ],
-                   ),
-                   const SizedBox(height: 12),
-                 ],
-                 Row(
-                   children: [
-                      Expanded(child: _buildDetailRow("INGRESO", DateFormat('dd/MM - HH:mm').format(order.createdAt))),
-                      const SizedBox(width: 16),
-                      Expanded(child: _buildDetailRow("ENTREGA", DateFormat('dd/MM - HH:mm').format(order.deliveryDueAt))),
+                   if (order.product != null && order.product!.isNotEmpty) ...[
+                     _buildDetailRow("PRODUCTO", order.product!),
+                     const SizedBox(height: 12),
                    ],
-                 ),
-                 const SizedBox(height: 20),
-                
-                const Text("TEXTO / GUION", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                const SizedBox(height: 6),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(8)),
-                  child: Text(
-                    (order.scriptText != null && order.scriptText!.isNotEmpty) ? order.scriptText! : "Sin texto especificado", 
-                    style: TextStyle(
-                      color: (order.scriptText != null && order.scriptText!.isNotEmpty) ? Colors.white70 : Colors.white24, 
-                      fontSize: 13,
-                    ), 
-                    maxLines: 6, 
-                  ),
-                ),
-                
-                const SizedBox(height: 16),
-
-                const Text("ARCHIVO ADJUNTO", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                const SizedBox(height: 6),
-                if (order.scriptFileUrl != null && order.scriptFileUrl!.isNotEmpty)
-                  ElevatedButton.icon(
-                    onPressed: () => _orderService.openUrl(order.scriptFileUrl),
-                    icon: const Icon(Icons.file_present_rounded),
-                    label: const Text("Ver Documento Adjunto"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2A2A35), 
-                      foregroundColor: Colors.blueAccent,
-                      minimumSize: const Size(double.infinity, 45),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                  )
-                else
-                  const Text("No hay archivo adjunto", style: TextStyle(color: Colors.white24, fontSize: 13, fontStyle: FontStyle.italic)),
-
-                const SizedBox(height: 24),
-                const Divider(color: Colors.white10),
-                const SizedBox(height: 24),
-
-                // SECCIÓN DE AUDIOS
-                if (order.baseAudioUrl != null || order.finalAudioUrl != null) ...[
-                  const Text("AUDIOS DISPONIBLES", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                  const SizedBox(height: 12),
+                   if ((order.country != null && order.country!.isNotEmpty) || (order.price != null)) ...[
+                     Row(
+                       children: [
+                          if (order.country != null && order.country!.isNotEmpty)
+                            Expanded(child: _buildDetailRow("PAÍS", order.country!)),
+                          if (order.country != null && order.country!.isNotEmpty && order.price != null)
+                            const SizedBox(width: 16),
+                          if (order.price != null)
+                            Expanded(child: _buildDetailRow("PRECIO", "\$${order.price!.toStringAsFixed(2)}")),
+                       ],
+                     ),
+                     const SizedBox(height: 12),
+                   ],
+                   if ((order.phone != null && order.phone!.isNotEmpty) || (order.paymentMethod != null && order.paymentMethod!.isNotEmpty)) ...[
+                     Row(
+                       children: [
+                          if (order.phone != null && order.phone!.isNotEmpty)
+                            Expanded(child: _buildDetailRow("CELULAR", order.phone!)),
+                          if (order.phone != null && order.phone!.isNotEmpty && order.paymentMethod != null && order.paymentMethod!.isNotEmpty)
+                            const SizedBox(width: 16),
+                          if (order.paymentMethod != null && order.paymentMethod!.isNotEmpty)
+                            Expanded(child: _buildDetailRow("MEDIO DE PAGO", order.paymentMethod!)),
+                       ],
+                     ),
+                     const SizedBox(height: 12),
+                   ],
+                   Row(
+                     children: [
+                        Expanded(child: _buildDetailRow("INGRESO", DateFormat('dd/MM - HH:mm').format(order.createdAt))),
+                        const SizedBox(width: 16),
+                        Expanded(child: _buildDetailRow("ENTREGA", DateFormat('dd/MM - HH:mm').format(order.deliveryDueAt))),
+                     ],
+                   ),
+                   const SizedBox(height: 20),
                   
-                  if (order.baseAudioUrl != null) ...[
-                    const Text("LOCUCIÓN BASE", style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () => _orderService.openUrl(order.baseAudioUrl),
-                            icon: const Icon(Icons.play_circle_fill),
-                            label: const Text("Escuchar"),
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.withOpacity(0.1), foregroundColor: Colors.amber),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => _orderService.openUrl(order.baseAudioUrl),
-                            icon: const Icon(Icons.download_rounded),
-                            label: const Text("Descargar"),
-                            style: OutlinedButton.styleFrom(foregroundColor: Colors.amber, side: BorderSide(color: Colors.amber.withOpacity(0.5))),
-                          ),
-                        ),
-                      ],
+                  const Text("TEXTO / GUION", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(8)),
+                    child: Text(
+                      (order.scriptText != null && order.scriptText!.isNotEmpty) ? order.scriptText! : "Sin texto especificado", 
+                      style: TextStyle(
+                        color: (order.scriptText != null && order.scriptText!.isNotEmpty) ? Colors.white70 : Colors.white24, 
+                        fontSize: 13,
+                      ), 
+                      maxLines: 6, 
                     ),
-                    const SizedBox(height: 16),
-                  ],
+                  ),
+                  
+                  const SizedBox(height: 16),
+  
+                  const Text("ARCHIVO ADJUNTO", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                  const SizedBox(height: 6),
+                  if (order.scriptFileUrl != null && order.scriptFileUrl!.isNotEmpty)
+                    ElevatedButton.icon(
+                      onPressed: () => _orderService.openUrl(order.scriptFileUrl),
+                      icon: const Icon(Icons.file_present_rounded),
+                      label: const Text("Ver Documento Adjunto"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2A2A35), 
+                        foregroundColor: Colors.blueAccent,
+                        minimumSize: const Size(double.infinity, 45),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    )
+                  else
+                    const Text("No hay archivo adjunto", style: TextStyle(color: Colors.white24, fontSize: 13, fontStyle: FontStyle.italic)),
+  
+                  const SizedBox(height: 24),
+                  const Divider(color: Colors.white10),
+                  const SizedBox(height: 24),
+  
+                  // SECCIÓN DE AUDIOS Y PROYECTO (SIEMPRE VISIBLE)
+                  if (true) ...[
+                    const Text("AUDIOS Y PROYECTO", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                    const SizedBox(height: 12),
+                    
+                    if (order.baseAudioUrl != null) ...[
+                      const Text("LOCUCIÓN BASE", style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _orderService.openUrl(order.baseAudioUrl),
+                              icon: const Icon(Icons.play_circle_fill),
+                              label: const Text("Escuchar"),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.withOpacity(0.1), foregroundColor: Colors.amber),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _orderService.openUrl(order.baseAudioUrl),
+                              icon: const Icon(Icons.download_rounded),
+                              label: const Text("Descargar"),
+                              style: OutlinedButton.styleFrom(foregroundColor: Colors.amber, side: BorderSide(color: Colors.amber.withOpacity(0.5))),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+  
+                    if (order.finalAudioUrl != null) ...[
+                      const Text("PRODUCTO FINAL (EDITADO)", style: TextStyle(color: Colors.redAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _orderService.openUrl(order.finalAudioUrl),
+                              icon: const Icon(Icons.play_circle_fill),
+                              label: const Text("Escuchar"),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent.withOpacity(0.1), foregroundColor: Colors.redAccent),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _orderService.openUrl(order.finalAudioUrl),
+                              icon: const Icon(Icons.download_rounded),
+                              label: const Text("Descargar"),
+                              style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent, side: BorderSide(color: Colors.redAccent.withOpacity(0.5))),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                    ],
 
-                  if (order.finalAudioUrl != null) ...[
-                    const Text("PRODUCTO FINAL (EDITADO)", style: TextStyle(color: Colors.redAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                    // PROYECTO
+                    const Text("PROYECTO EDITABLE (.AUP3 / ZIP)", style: TextStyle(color: Colors.purpleAccent, fontSize: 10, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () => _orderService.openUrl(order.finalAudioUrl),
-                            icon: const Icon(Icons.play_circle_fill),
-                            label: const Text("Escuchar"),
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent.withOpacity(0.1), foregroundColor: Colors.redAccent),
+                    if (order.projectFileUrl != null)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _orderService.openUrl(order.projectFileUrl),
+                              icon: const Icon(Icons.folder_zip, color: Colors.purpleAccent),
+                              label: const Text("Ver Proyecto"),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.purple.withOpacity(0.1), foregroundColor: Colors.purpleAccent),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => _orderService.openUrl(order.finalAudioUrl),
-                            icon: const Icon(Icons.download_rounded),
-                            label: const Text("Descargar"),
-                            style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent, side: BorderSide(color: Colors.redAccent.withOpacity(0.5))),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _orderService.openUrl(order.projectFileUrl),
+                              icon: const Icon(Icons.download_rounded),
+                              label: const Text("Descargar"),
+                              style: OutlinedButton.styleFrom(foregroundColor: Colors.purpleAccent, side: BorderSide(color: Colors.purpleAccent.withOpacity(0.5))),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ] else
-                   const Center(child: Text("Aún no hay audios procesados", style: TextStyle(color: Colors.white10, fontSize: 12))),
-              ],
+                        ],
+                      )
+                    else 
+                      const Text("No hay proyecto cargado", style: TextStyle(color: Colors.white10, fontSize: 12)),
+                  ] else
+                     const Center(child: Text("Aún no hay audios procesados", style: TextStyle(color: Colors.white10, fontSize: 12))),
+                ],
+              ),
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('CERRAR', style: TextStyle(color: Colors.white38)),
+            ),
+            if (order.status == OrderStatus.EN_REVISION && (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.qc))
+              ElevatedButton(
+                onPressed: isProcessing ? null : () async {
+                  setDialogState(() => isProcessing = true);
+                  try {
+                    await _orderService.approveQualityControl(order.id!);
+                    if (mounted) {
+                      Navigator.pop(context);
+                      refreshData();
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Pedido aprobado con éxito"), backgroundColor: Colors.green));
+                    }
+                  } catch (e) {
+                    setDialogState(() => isProcessing = false);
+                  }
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white),
+                child: isProcessing 
+                  ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
+                  : const Text("LISTO (APROBAR)"),
+              ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('CERRAR', style: TextStyle(color: Colors.white38)),
-          ),
-        ],
       ),
     );
   }

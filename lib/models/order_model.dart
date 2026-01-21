@@ -77,18 +77,33 @@ class OrderModel {
     switch (status) {
       case OrderStatus.PENDIENTE:
         return {
-          'color': const Color(0xFF10B981), // Verde Esmeralda
+          'color': const Color(0xFFEF4444), // Rojo (Tailwind Red 500)
           'label': 'PENDIENTE',
         };
       case OrderStatus.EN_GENERACION:
         return {
-          'color': const Color(0xFFFFC107), // Amarillo / Ámbar
-          'label': 'EN GENERACION',
+          'color': const Color(0xFFF97316), // Naranja (Tailwind Orange 500)
+          'label': 'EN GENERACIÓN',
+        };
+      case OrderStatus.EDICION:
+        return {
+          'color': const Color(0xFFF59E0B), // Ámbar / Amarillo (Tailwind Amber 500)
+          'label': 'EDICIÓN',
+        };
+      case OrderStatus.EN_REVISION:
+        return {
+          'color': const Color(0xFF3B82F6), // Azul (Tailwind Blue 500)
+          'label': 'EN REVISIÓN',
         };
       case OrderStatus.AUDIO_LISTO:
         return {
-          'color': const Color(0xFFEF4444), // Rojo (Red Accent / Tailwind Red 500)
+          'color': const Color(0xFF10B981), // Verde (Tailwind Emerald 500 / Listo)
           'label': 'LISTO',
+        };
+      case OrderStatus.ANULADO:
+        return {
+          'color': Colors.grey,
+          'label': 'ANULADO',
         };
       default:
         return {

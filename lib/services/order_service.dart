@@ -117,13 +117,13 @@ class OrderService {
     }
   }
 
-  // Actualizar estado a AUDIO_LISTO con el audio final editado
+  // Actualizar estado a EN_REVISION con el audio final editado (Cerrar edición)
   Future<void> completeEdition(int orderId, String audioUrl) async {
     final data = await _supabase
         .from('orders')
         .update({
-      'status': 'AUDIO_LISTO',
-      'final_audio_url': audioUrl, // Se guarda en final_audio_url (Editor)
+      'status': 'EN_REVISION', // Cambiado de AUDIO_LISTO a EN_REVISION
+      'final_audio_url': audioUrl, 
       'edition_ended_at': DateTime.now().toIso8601String(),
     })
     .eq('id', orderId)
@@ -131,6 +131,21 @@ class OrderService {
 
     if ((data as List).isEmpty) {
       throw Exception("No se pudo completar la edición del pedido #$orderId");
+    }
+  }
+
+  // Aprobar Control de Calidad y pasar a AUDIO_LISTO
+  Future<void> approveQualityControl(int orderId) async {
+    final data = await _supabase
+        .from('orders')
+        .update({
+      'status': 'AUDIO_LISTO',
+    })
+    .eq('id', orderId)
+    .select();
+
+    if ((data as List).isEmpty) {
+      throw Exception("No se pudo aprobar el control de calidad del pedido #$orderId");
     }
   }
 

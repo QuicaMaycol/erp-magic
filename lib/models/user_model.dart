@@ -48,7 +48,7 @@ class UserModel {
       'id': id,
       'email': email,
       'role': role.name,
-      'full_name': name,
+      'name': name,
       'active': active,
     };
   }

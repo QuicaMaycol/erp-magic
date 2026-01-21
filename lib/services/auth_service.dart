@@ -34,15 +34,28 @@ class AuthService {
     required String role,
     required String name,
   }) async {
-    return await _supabase.auth.signUp(
-      email: email,
-      password: password,
-      data: {
-        'sistema': 'erp_magicvoice',
-        'role': role,
-        'full_name': name,
-      },
+    // Usamos un cliente temporal para evitar que la sesión del admin sea reemplazada
+    // ya que supabase_flutter 2.x por defecto inicia sesión al hacer signUp si 
+    // la confirmación por email está desactivada.
+    final tempClient = SupabaseClient(
+      SupabaseConfig.url, 
+      SupabaseConfig.anonKey,
     );
+    
+    try {
+      return await tempClient.auth.signUp(
+        email: email,
+        password: password,
+        data: {
+          'sistema': 'erp_magicvoice',
+          'role': role,
+          'name': name,
+          'active': true,
+        },
+      );
+    } finally {
+      tempClient.dispose();
+    }
   }
 
   // Obtener todos los usuarios (Solo para Admin)

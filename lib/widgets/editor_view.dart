@@ -322,11 +322,11 @@ class _EditorViewState extends State<EditorView> {
                           ? () async {
                               setDialogState(() => isProcessing = true);
                               try {
-                                await _orderService.completeEdition(order.id!, tempFinalAudioUrl!);
-                                if (mounted) {
-                                  Navigator.pop(context);
-                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Pedido finalizado con éxito"), backgroundColor: Colors.green));
-                                }
+                                  await _orderService.completeEdition(order.id!, tempFinalAudioUrl!);
+                                  if (mounted) {
+                                    Navigator.pop(context);
+                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Enviado a Control de Calidad con éxito"), backgroundColor: Colors.blueAccent));
+                                  }
                               } catch (e) {
                                 setDialogState(() => isProcessing = false);
                               }
@@ -339,7 +339,7 @@ class _EditorViewState extends State<EditorView> {
                       ),
                       child: isProcessing 
                           ? const CircularProgressIndicator(color: Colors.white) 
-                          : const Text("LISTO (ENTREGAR AUDIO)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                          : const Text("LISTO (ENVIAR A REVISIÓN)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                     ),
                   )
                 ],
@@ -406,9 +406,9 @@ class _EditorViewState extends State<EditorView> {
                   if (_statusFilter != null) {
                     orders = orders.where((o) => o.status == _statusFilter).toList();
                   } else {
-                    // Por defecto: Edición y Audio Listo
+                    // Por defecto: Edición, Revisión y Audio Listo
                     orders = orders.where((o) => 
-                      o.status == OrderStatus.EDICION || o.status == OrderStatus.AUDIO_LISTO
+                      o.status == OrderStatus.EDICION || o.status == OrderStatus.EN_REVISION || o.status == OrderStatus.AUDIO_LISTO
                     ).toList();
                   }
 
@@ -475,6 +475,7 @@ class _EditorViewState extends State<EditorView> {
         ),
         _filterChip("TODO", null),
         _filterChip("EDICIÓN", OrderStatus.EDICION),
+        _filterChip("REVISIÓN", OrderStatus.EN_REVISION),
         _filterChip("LISTO", OrderStatus.AUDIO_LISTO),
         
         const VerticalDivider(color: Colors.white10, width: 10),

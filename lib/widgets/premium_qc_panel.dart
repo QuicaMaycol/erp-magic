@@ -104,7 +104,7 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF16161A),
+          backgroundColor: const Color(0xFF1B1B21),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Text('Gestionar Pedido #${order.id}', 
             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -206,13 +206,14 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
                   const Divider(color: Colors.white10),
                   const SizedBox(height: 20),
 
-                  // SECCIÓN DE AUDIOS (Si existen)
-                  if (order.baseAudioUrl != null || order.finalAudioUrl != null) ...[
-                    const Text("AUDIOS DISPONIBLES", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                  // SECCIÓN DE AUDIOS Y ARCHIVOS (SIEMPRE VISIBLE)
+                  if (true) ...[
+                    const Text("AUDIOS Y PROYECTO", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
                     const SizedBox(height: 12),
                     
+                    // 1. Locución Base
                     if (order.baseAudioUrl != null) ...[
-                      const Text("LOCUCIÓN BASE", style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
+                      const Text("LOCUCIÓN BASE (VOZ)", style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       Row(
                         children: [
@@ -238,6 +239,7 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
                       const SizedBox(height: 16),
                     ],
 
+                    // 2. Producto Final
                     if (order.finalAudioUrl != null) ...[
                       const Text("PRODUCTO FINAL (EDITADO)", style: TextStyle(color: Colors.blueAccent, fontSize: 10, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
@@ -262,8 +264,49 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
                     ],
+
+                    // 3. Proyecto Editable (Independiente)
+                    const Text("PROYECTO EDITABLE (.AUP3 / ZIP)", style: TextStyle(color: Colors.purpleAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    if (order.projectFileUrl != null)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _orderService.openUrl(order.projectFileUrl),
+                              icon: const Icon(Icons.folder_zip, color: Colors.purpleAccent),
+                              label: const Text("Ver Proyecto"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.purple.withOpacity(0.1), 
+                                foregroundColor: Colors.purpleAccent,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _showDownloadOptions(order.projectFileUrl, "Archivo de Proyecto"),
+                              icon: const Icon(Icons.download_rounded),
+                              label: const Text("Descargar Project"),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.purpleAccent, 
+                                side: BorderSide(color: Colors.purpleAccent.withOpacity(0.5)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.02), borderRadius: BorderRadius.circular(8)),
+                        child: const Text("Aún no se ha cargado el proyecto editable", style: TextStyle(color: Colors.white24, fontSize: 11, fontStyle: FontStyle.italic)),
+                      ),
+
+                    const SizedBox(height: 20),
                     const Divider(color: Colors.white10),
                     const SizedBox(height: 20),
                   ],
@@ -283,43 +326,64 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
                   const SizedBox(height: 20),
 
                   
-                  SizedBox(
+                   SizedBox(
                     width: double.infinity,
                     height: 50,
-                    child: ElevatedButton(
-                      onPressed: (tempGenId != null && tempEdId != null && !isProcessing && (order.status == OrderStatus.PENDIENTE || order.status == OrderStatus.EN_GENERACION)) 
-                          ? () async {
+                    child: (order.status == OrderStatus.EN_REVISION) 
+                      ? ElevatedButton(
+                          onPressed: isProcessing ? null : () async {
                               setDialogState(() => isProcessing = true);
                               try {
-                                await _orderService.assignStaff(order.id!, tempGenId!, tempEdId!);
+                                await _orderService.approveQualityControl(order.id!);
                                 if (mounted) {
                                   Navigator.pop(context);
-                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Pedido actualizado correctamente"), backgroundColor: Colors.green));
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Pedido aprobado por Calidad"), backgroundColor: Colors.green));
                                 }
                               } catch (e) {
                                 setDialogState(() => isProcessing = false);
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error al aprobar: $e"), backgroundColor: Colors.red));
                               }
-                            } 
-                          : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF7C3AED),
-                        disabledBackgroundColor: Colors.white.withOpacity(0.05),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-
-                      ),
-                      child: isProcessing 
-                          ? const CircularProgressIndicator(color: Colors.white) 
-                          : Text(
-                              (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.EDICION) 
-                                ? "ORDEN PROCESADA" 
-                                : "GENERAR ORDEN", 
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold, 
-                                color: (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.EDICION) ? Colors.white24 : Colors.white
-                              )
-                            ),
-                    ),
-
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF10B981), // Verde
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: isProcessing 
+                              ? const CircularProgressIndicator(color: Colors.white) 
+                              : const Text("LISTO (APROBAR CALIDAD)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                        )
+                      : ElevatedButton(
+                          onPressed: (tempGenId != null && tempEdId != null && !isProcessing && (order.status == OrderStatus.PENDIENTE || order.status == OrderStatus.EN_GENERACION)) 
+                              ? () async {
+                                  setDialogState(() => isProcessing = true);
+                                  try {
+                                    await _orderService.assignStaff(order.id!, tempGenId!, tempEdId!);
+                                    if (mounted) {
+                                      Navigator.pop(context);
+                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Pedido actualizado correctamente"), backgroundColor: Colors.green));
+                                    }
+                                  } catch (e) {
+                                    setDialogState(() => isProcessing = false);
+                                  }
+                                } 
+                              : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF7C3AED),
+                            disabledBackgroundColor: Colors.white.withOpacity(0.05),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: isProcessing 
+                              ? const CircularProgressIndicator(color: Colors.white) 
+                              : Text(
+                                  (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.EDICION) 
+                                    ? "ORDEN PROCESADA" 
+                                    : "GENERAR ORDEN", 
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold, 
+                                    color: (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.EDICION) ? Colors.white24 : Colors.white
+                                  )
+                                ),
+                        ),
                   )
                 ],
               ),
@@ -491,6 +555,7 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
         _filterChip("PENDIENTE", OrderStatus.PENDIENTE),
         _filterChip("GENERACIÓN", OrderStatus.EN_GENERACION),
         _filterChip("EDICIÓN", OrderStatus.EDICION),
+        _filterChip("REVISIÓN", OrderStatus.EN_REVISION),
         _filterChip("LISTO", OrderStatus.AUDIO_LISTO),
 
         const VerticalDivider(color: Colors.white10, width: 10),
