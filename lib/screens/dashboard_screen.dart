@@ -312,7 +312,7 @@ class DashboardScreenState extends State<DashboardScreen> {
               onPressed: () => Navigator.pop(context),
               child: const Text('CERRAR', style: TextStyle(color: Colors.white38)),
             ),
-            if (order.status == OrderStatus.EN_REVISION && (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.qc))
+            if (order.status == OrderStatus.EN_REVISION && (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.control_calidad))
               ElevatedButton(
                 onPressed: isProcessing ? null : () async {
                   setDialogState(() => isProcessing = true);
@@ -870,7 +870,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                              }
                           }
                         },
-                        showEditButton: _currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.qc,
+                        showEditButton: _currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.control_calidad,
                       ),
                     ),
                   );

@@ -250,16 +250,33 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(user.email, style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: _getRoleColor(user.role).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: _getRoleColor(user.role).withOpacity(0.3)),
-                        ),
-                        child: Text(user.role.name.toUpperCase(), 
-                          style: TextStyle(color: _getRoleColor(user.role), fontSize: 10, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: _getRoleColor(user.role).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: _getRoleColor(user.role).withOpacity(0.3)),
+                            ),
+                            child: Text(user.role.name.toUpperCase(), 
+                              style: TextStyle(color: _getRoleColor(user.role), fontSize: 10, fontWeight: FontWeight.bold)),
+                          ),
+                          if (!user.confirmed) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                              ),
+                              child: const Text("PENDIENTE", 
+                                style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                   ),
@@ -290,7 +307,7 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
   Color _getRoleColor(UserRole role) {
     switch (role) {
       case UserRole.admin: return Colors.redAccent;
-      case UserRole.qc: return Colors.orangeAccent;
+      case UserRole.control_calidad: return Colors.orangeAccent;
       case UserRole.recepcion: return Colors.blueAccent;
       case UserRole.generador: return Colors.greenAccent;
       case UserRole.editor: return Colors.purpleAccent;

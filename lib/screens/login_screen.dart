@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -13,6 +14,40 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   final _authService = AuthService();
   bool _isLoading = false;
+  bool _rememberMe = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedEmail = prefs.getString('remembered_email');
+    final savedPassword = prefs.getString('remembered_password');
+    
+    if (savedEmail != null && savedPassword != null) {
+      if (mounted) {
+        setState(() {
+          _emailController.text = savedEmail;
+          _passwordController.text = savedPassword;
+          _rememberMe = true;
+        });
+      }
+    }
+  }
+
+  Future<void> _saveCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_rememberMe) {
+      await prefs.setString('remembered_email', _emailController.text.trim());
+      await prefs.setString('remembered_password', _passwordController.text.trim());
+    } else {
+      await prefs.remove('remembered_email');
+      await prefs.remove('remembered_password');
+    }
+  }
 
   Future<void> _signIn() async {
     setState(() => _isLoading = true);
@@ -21,6 +56,10 @@ class _LoginScreenState extends State<LoginScreen> {
         _emailController.text.trim(),
         _passwordController.text.trim(),
       );
+      
+      // Guardar credenciales si rememberMe está activo
+      await _saveCredentials();
+      
       // Main.dart stream listener will handle navigation
     } catch (e) {
       if (mounted) {
@@ -79,7 +118,27 @@ class _LoginScreenState extends State<LoginScreen> {
                   focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFF7C3AED))),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 8),
+              Theme(
+                data: ThemeData.dark().copyWith(
+                  unselectedWidgetColor: Colors.white54,
+                ),
+                child: CheckboxListTile(
+                  title: const Text(
+                    "Recordar Credenciales",
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
+                  value: _rememberMe,
+                  onChanged: (value) {
+                    setState(() => _rememberMe = value ?? false);
+                  },
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                  activeColor: const Color(0xFF7C3AED),
+                  dense: true,
+                ),
+              ),
+              const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 height: 48,
@@ -87,10 +146,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: _isLoading ? null : _signIn,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF7C3AED),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                   child: _isLoading 
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('Iniciar Sesión'),
+                    ? const SizedBox(
+                        width: 20, 
+                        height: 20, 
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : const Text('Iniciar Sesión', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ),
             ],

@@ -40,6 +40,9 @@ class AuthService {
     final tempClient = SupabaseClient(
       SupabaseConfig.url, 
       SupabaseConfig.anonKey,
+      authOptions: const AuthClientOptions(
+        authFlowType: AuthFlowType.implicit,
+      ),
     );
     
     try {

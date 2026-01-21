@@ -33,14 +33,26 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   Future<void> _loadUser() async {
-    final user = await _authService.getCurrentProfile();
-    if (mounted) {
-      setState(() {
-        _currentUser = user;
-        if (user != null) {
-          _initTabs(user);
+    try {
+      final user = await _authService.getCurrentProfile().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw 'Timeout loading profile',
+      );
+      
+      if (mounted) {
+        if (user == null) {
+          setState(() => _cachedTabs = []); // Bandera para indicar que terminó pero no hay perfil
+        } else {
+          setState(() {
+            _currentUser = user;
+            _initTabs(user);
+          });
         }
-      });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _cachedTabs = []); // Bandera de error/fin
+      }
     }
   }
 
@@ -51,42 +63,71 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         icon: const Icon(Icons.home_outlined),
         selectedIcon: const Icon(Icons.home),
         view: _InicioView(user: user),
-        roles: [UserRole.admin, UserRole.qc, UserRole.recepcion, UserRole.generador, UserRole.editor],
+        roles: [UserRole.admin, UserRole.control_calidad, UserRole.recepcion, UserRole.generador, UserRole.editor],
       ),
       _TabItem(
         title: 'Recepción',
         icon: const Icon(Icons.receipt_long_outlined),
         selectedIcon: const Icon(Icons.receipt_long),
         view: DashboardScreen(key: _dashboardKey),
-        roles: [UserRole.admin, UserRole.qc, UserRole.recepcion],
+        roles: [UserRole.admin, UserRole.control_calidad, UserRole.recepcion],
       ),
       _TabItem(
         title: 'Calidad',
         icon: const Icon(Icons.high_quality_outlined),
         selectedIcon: const Icon(Icons.high_quality),
         view: const PremiumQCPanel(),
-        roles: [UserRole.admin, UserRole.qc],
+        roles: [UserRole.admin, UserRole.control_calidad],
       ),
       _TabItem(
         title: 'Generar',
         icon: const Icon(Icons.bolt_outlined),
         selectedIcon: const Icon(Icons.bolt),
         view: GeneratorView(currentUser: user),
-        roles: [UserRole.admin, UserRole.qc, UserRole.generador],
+        roles: [UserRole.admin, UserRole.control_calidad, UserRole.generador],
       ),
       _TabItem(
         title: 'Editar',
         icon: const Icon(Icons.music_note_outlined),
         selectedIcon: const Icon(Icons.music_note),
         view: EditorView(currentUser: user),
-        roles: [UserRole.admin, UserRole.qc, UserRole.editor],
+        roles: [UserRole.admin, UserRole.control_calidad, UserRole.editor],
       ),
-    ].where((tab) => tab.roles.contains(user.role)).toList();
+    ].where((tab) {
+      final userRoleName = user.role.name.toLowerCase();
+      return tab.roles.any((r) => r.name.toLowerCase() == userRoleName);
+    }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     if (_currentUser == null || _cachedTabs == null) {
+      // Si el caché está vacío pero no es null, significa que falló la carga del perfil
+      if (_cachedTabs != null && _cachedTabs!.isEmpty) {
+        return Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.redAccent, size: 60),
+                const SizedBox(height: 16),
+                const Text('No se pudo cargar tu perfil de usuario', 
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                const Text('Verifica tu conexión o reintenta ingresar.', 
+                  style: TextStyle(color: Colors.white38)),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: () => _authService.signOut(),
+                  icon: const Icon(Icons.logout),
+                  label: const Text('CERRAR SESIÓN Y REINTENTAR'),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7C3AED)),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
@@ -117,9 +158,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       _selectedIndex = 0;
     }
 
-    final isAdmin = _currentUser!.role == UserRole.admin;
-    final isQC = _currentUser!.role == UserRole.qc;
-    final isRecepcion = _currentUser!.role == UserRole.recepcion;
+    // Usar nombres para mayor robustez ante Hot Reload y cambios de enum
+    final roleName = _currentUser!.role.name.toLowerCase();
+    final isAdmin = roleName == 'admin';
+    final isQC = roleName == 'control_calidad';
+    final isRecepcion = roleName == 'recepcion';
 
     return Scaffold(
       backgroundColor: const Color(0xFF121216),
