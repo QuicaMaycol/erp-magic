@@ -11,6 +11,7 @@ import '../widgets/premium_qc_panel.dart';
 import '../widgets/generator_view.dart';
 import '../widgets/editor_view.dart';
 import '../widgets/trash_view.dart';
+import '../services/notification_service.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -43,9 +44,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         if (user == null) {
           setState(() => _cachedTabs = []); // Bandera para indicar que terminó pero no hay perfil
         } else {
-          setState(() {
             _currentUser = user;
             _initTabs(user);
+            // Inicializar notificaciones para el token FCM
+            NotificationService().initialize();
           });
         }
       }

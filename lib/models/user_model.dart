@@ -13,6 +13,7 @@ class UserModel {
   final String name;
   final bool active;
   final bool confirmed;
+  final String? fcmToken;
 
   UserModel({
     required this.id,
@@ -21,6 +22,7 @@ class UserModel {
     required this.name,
     required this.active,
     this.confirmed = false,
+    this.fcmToken,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -31,6 +33,7 @@ class UserModel {
       name: json['full_name'] ?? json['name'] ?? '',
       active: json['active'] ?? true,
       confirmed: json['confirmed'] ?? (json['email_confirmed_at'] != null),
+      fcmToken: json['fcm_token'],
     );
   }
 

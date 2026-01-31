@@ -1,14 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'supabase_config.dart';
 import 'services/auth_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_navigation_screen.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Inicialización de Firebase (Evitar error en Web si no hay opciones)
+  if (!kIsWeb) {
+    try {
+      await Firebase.initializeApp();
+      print("🔥 Firebase inicializado correctamente");
+    } catch (e) {
+      print("⚠️ Error inicializando Firebase: $e");
+    }
+  }
+
   await Supabase.initialize(
     url: SupabaseConfig.url,
     anonKey: SupabaseConfig.anonKey,
