@@ -181,7 +181,7 @@ class OrderService {
   }
 
   // Actualizar Audio Final (Rol Calidad / Reemplazo)
-  Future<void> updateAudioFinal(int orderId, String audioUrl) async {
+  Future<void> updateAudioFinal(int orderId, String? audioUrl) async {
     await _supabase
         .from('orders')
         .update({'final_audio_url': audioUrl})
@@ -189,7 +189,7 @@ class OrderService {
   }
 
   // Actualizar Audio de Muestra
-  Future<void> updateAudioMuestra(int orderId, String audioUrl) async {
+  Future<void> updateAudioMuestra(int orderId, String? audioUrl) async {
     await _supabase
         .from('orders')
         .update({'audio_muestra_url': audioUrl})
@@ -258,15 +258,37 @@ class OrderService {
   }
 
   /// Abre una URL en el navegador/visor del sistema
-  Future<void> openUrl(String? url) async {
+  Future<void> openUrl(String? url, {bool forceDownload = false}) async {
     if (url == null || url.trim().isEmpty) return;
     try {
       String processedUrl = url.trim();
 
-      // CORRECCIÓN: Si el "link" no parece un link (no tiene http), asumimos que es un ID de Google Drive
-      if (!processedUrl.startsWith('http')) {
-        print("Detectado posible ID de Drive: $processedUrl. Construyendo URL completa...");
-        processedUrl = 'https://drive.google.com/file/d/$processedUrl/view';
+      // 1. Detección y corrección de Google Drive
+      if (processedUrl.contains('drive.google.com')) {
+        // Extraer el ID del archivo
+        String? fileId;
+        if (processedUrl.contains('/file/d/')) {
+          fileId = processedUrl.split('/file/d/')[1].split('/')[0];
+        } else if (processedUrl.contains('id=')) {
+          fileId = processedUrl.split('id=')[1].split('&')[0];
+        }
+
+        if (fileId != null) {
+          if (forceDownload) {
+            processedUrl = 'https://drive.google.com/uc?export=download&id=$fileId';
+          } else {
+            // Para previsualización nativa o reproducción
+            processedUrl = 'https://drive.google.com/file/d/$fileId/view';
+          }
+        }
+      } else if (!processedUrl.startsWith('http')) {
+        // Fallback para IDs brutos de Drive
+        print("Detectado posible ID de Drive: $processedUrl. Construyendo URL...");
+        if (forceDownload) {
+          processedUrl = 'https://drive.google.com/uc?export=download&id=$processedUrl';
+        } else {
+          processedUrl = 'https://drive.google.com/file/d/$processedUrl/view';
+        }
       }
 
       final String lowerUrl = processedUrl.toLowerCase();
@@ -274,7 +296,6 @@ class OrderService {
       
       // Si es un documento directo (Word, PDF) y no es ya un link de visualización de Drive/Docs,
       // intentamos usar el visor de Google Docs para asegurar que se abra en el navegador móvil/web sin descargar.
-      // (Omitimos esto si ya es un link de drive.google.com para no romper la vista nativa de Drive)
       if (!lowerUrl.contains('drive.google.com') && 
           (lowerUrl.contains('.doc') || lowerUrl.contains('.pdf') || lowerUrl.contains('.docx') || lowerUrl.contains('.txt'))) {
         uri = Uri.parse('https://docs.google.com/viewer?url=${Uri.encodeComponent(processedUrl)}');
@@ -283,7 +304,6 @@ class OrderService {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
-        // Fallback: intentar lanzar sin validación estricta (a veces necesario para esquemas raros)
         try {
           await launchUrl(uri, mode: LaunchMode.platformDefault);
         } catch (e) {

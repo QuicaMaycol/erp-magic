@@ -35,6 +35,10 @@ class DashboardScreenState extends State<DashboardScreen> {
   OrderStatus? _statusFilter;
   bool _sortByDelivery = true; // true: Entrega, false: Ingreso
 
+  // Estado para selección masiva
+  final Set<int> _selectedOrderIds = {};
+  bool _isBulkLoading = false;
+
   // Controlador de dropzone persistente
   DropzoneViewController? _dropzoneController;
 
@@ -119,6 +123,79 @@ class DashboardScreenState extends State<DashboardScreen> {
 
   void refreshData() {
     _initialLoad();
+  }
+
+  Future<void> _handleBulkDownload() async {
+    if (_selectedOrderIds.isEmpty) return;
+
+    setState(() => _isBulkLoading = true);
+    
+    try {
+      final List<Map<String, String>> filesToZip = [];
+      
+      // Obtenemos las órdenes actuales para extraer URLs y nombres
+      // Usamos _orders que ya está cargado o fetchOrders si queremos lo último
+      final allOrders = await _orderService.fetchOrders();
+      
+      for (var id in _selectedOrderIds) {
+        final order = allOrders.firstWhere((o) => o.id == id, orElse: () => throw Exception("Orden no encontrada"));
+        final safeName = order.clientName.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+        
+        // Audio Final
+        if (order.finalAudioUrl != null && order.finalAudioUrl!.isNotEmpty) {
+          filesToZip.add({
+            'name': '${order.id}_${safeName}_FINAL.mp3',
+            'url': order.finalAudioUrl!,
+            'client_name': order.clientName,
+            'order_id': order.id.toString(),
+          });
+        }
+
+        // Audio Muestra
+        if (order.audioMuestraUrl != null && order.audioMuestraUrl!.isNotEmpty) {
+          filesToZip.add({
+            'name': '${order.id}_${safeName}_MUESTRA.mp3',
+            'url': order.audioMuestraUrl!,
+            'client_name': order.clientName,
+            'order_id': order.id.toString(),
+          });
+        }
+      }
+
+      if (filesToZip.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Ninguna orden seleccionada tiene archivos para descargar"), backgroundColor: Colors.orangeAccent)
+          );
+        }
+        return;
+      }
+
+      final zipUrl = await _n8nService.generateBulkZip(filesToZip);
+      
+      if (zipUrl != null) {
+        print("📥 ZIP URL RECIBIDA: '$zipUrl'");
+        await _orderService.openUrl(zipUrl, forceDownload: true);
+        setState(() {
+          _selectedOrderIds.clear();
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("✅ ZIP generado con éxito"), backgroundColor: Colors.green)
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("❌ Error al generar el ZIP"), backgroundColor: Colors.redAccent)
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isBulkLoading = false);
+      }
+    }
   }
 
   void showOrderForm({OrderModel? order}) {
@@ -247,10 +324,37 @@ class DashboardScreenState extends State<DashboardScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () => _orderService.openUrl(order.baseAudioUrl),
+                              onPressed: () => _orderService.openUrl(order.baseAudioUrl, forceDownload: true),
                               icon: const Icon(Icons.download_rounded),
                               label: const Text("Descargar"),
                               style: OutlinedButton.styleFrom(foregroundColor: Colors.amber, side: BorderSide(color: Colors.amber.withOpacity(0.5))),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+  
+                    if (order.audioMuestraUrl != null) ...[
+                      const Text("AUDIO DE MUESTRA", style: TextStyle(color: Colors.tealAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _orderService.openUrl(order.audioMuestraUrl),
+                              icon: const Icon(Icons.play_circle_fill),
+                              label: const Text("Escuchar"),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.tealAccent.withOpacity(0.1), foregroundColor: Colors.tealAccent),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _orderService.openUrl(order.audioMuestraUrl, forceDownload: true),
+                              icon: const Icon(Icons.download_rounded),
+                              label: const Text("Descargar"),
+                              style: OutlinedButton.styleFrom(foregroundColor: Colors.tealAccent, side: BorderSide(color: Colors.tealAccent.withOpacity(0.5))),
                             ),
                           ),
                         ],
@@ -274,7 +378,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () => _orderService.openUrl(order.finalAudioUrl),
+                              onPressed: () => _orderService.openUrl(order.finalAudioUrl, forceDownload: true),
                               icon: const Icon(Icons.download_rounded),
                               label: const Text("Descargar"),
                               style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent, side: BorderSide(color: Colors.redAccent.withOpacity(0.5))),
@@ -302,7 +406,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () => _orderService.openUrl(order.projectFileUrl),
+                              onPressed: () => _orderService.openUrl(order.projectFileUrl, forceDownload: true),
                               icon: const Icon(Icons.download_rounded),
                               label: const Text("Descargar"),
                               style: OutlinedButton.styleFrom(foregroundColor: Colors.purpleAccent, side: BorderSide(color: Colors.purpleAccent.withOpacity(0.5))),
@@ -499,6 +603,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                           selectedDate, 
                           (newDate) => setDialogState(() => selectedDate = newDate), // Callback para actualización real
                           obsController, 
+                          (newFile) => setDialogState(() => selectedFile = newFile), // Callback para archivo
                           order, 
                           context
                         ),
@@ -788,11 +893,18 @@ class DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) return const Center(child: CircularProgressIndicator(color: Color(0xFF7C3AED)));
     
-    // Filtramos las órdenes según el buscador
+    // Lógica de filtrado unificada para UI y Selección
     final filteredOrders = _orders.where((order) {
-      if (_searchQuery.isEmpty) return true;
-      return order.clientName.toLowerCase().contains(_searchQuery) ||
-             (order.id?.toString().contains(_searchQuery) ?? false);
+      // Filtro de anulados
+      if (_statusFilter == null && order.status == OrderStatus.ANULADO) return false;
+      // Filtro de estado
+      if (_statusFilter != null && order.status != _statusFilter) return false;
+      // Filtro de búsqueda
+      if (_searchQuery.isNotEmpty) {
+        return order.clientName.toLowerCase().contains(_searchQuery) ||
+               (order.id?.toString().contains(_searchQuery) ?? false);
+      }
+      return true;
     }).toList();
 
     return Scaffold(
@@ -808,6 +920,44 @@ class DashboardScreenState extends State<DashboardScreen> {
                 const Text('CENTRAL DE PEDIDOS', style: TextStyle(color: Colors.white38, fontSize: 10, letterSpacing: 2, fontWeight: FontWeight.bold)),
                 Row(
                   children: [
+                    // Botón Seleccionar Todo
+                    if (filteredOrders.isNotEmpty)
+                      IconButton(
+                        tooltip: _selectedOrderIds.length == filteredOrders.length ? "Desmarcar todos" : "Seleccionar todos",
+                        icon: Icon(
+                          _selectedOrderIds.length == filteredOrders.length ? Icons.check_circle : Icons.radio_button_unchecked,
+                          color: _selectedOrderIds.isNotEmpty ? const Color(0xFF7C3AED) : Colors.white24,
+                          size: 20,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            if (_selectedOrderIds.length == filteredOrders.length) {
+                              _selectedOrderIds.clear();
+                            } else {
+                              for (var o in filteredOrders) {
+                                if (o.id != null) _selectedOrderIds.add(o.id!);
+                              }
+                            }
+                          });
+                        },
+                      ),
+                    if (_selectedOrderIds.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 12.0),
+                        child: ElevatedButton.icon(
+                          onPressed: _isBulkLoading ? null : _handleBulkDownload,
+                          icon: _isBulkLoading 
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                            : const Icon(Icons.archive_outlined, size: 18),
+                          label: Text("ZIP (${_selectedOrderIds.length})"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.tealAccent,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ),
                     if (_errorMessage != null)
                       Padding(
                         padding: const EdgeInsets.only(right: 8.0),
@@ -832,20 +982,21 @@ class DashboardScreenState extends State<DashboardScreen> {
               child: StreamBuilder<List<OrderModel>>(
                 stream: _orderService.ordersStream,
                 builder: (context, snapshot) {
-                  var sourceList = snapshot.hasData ? snapshot.data! : _orders;
+                  // Usamos la misma lógica de filtrado que en build para consistencia
+                  List<OrderModel> sourceList = snapshot.hasData ? snapshot.data! : _orders;
                    
-                  // 1. Filtrado por Búsqueda
-                  if (_searchQuery.isNotEmpty) {
-                    sourceList = sourceList.where((o) => 
-                      o.clientName.toLowerCase().contains(_searchQuery) || (o.id?.toString().contains(_searchQuery) ?? false)
-                    ).toList();
-                  }
-
-                  // 2. Filtrado por Estado
+                  // 1. Filtrado de Base (No anulados a menos que se pida)
                   if (_statusFilter != null) {
                     sourceList = sourceList.where((o) => o.status == _statusFilter).toList();
                   } else {
                     sourceList = sourceList.where((o) => o.status != OrderStatus.ANULADO).toList();
+                  }
+
+                  // 2. Filtrado por Búsqueda
+                  if (_searchQuery.isNotEmpty) {
+                    sourceList = sourceList.where((o) => 
+                      o.clientName.toLowerCase().contains(_searchQuery) || (o.id?.toString().contains(_searchQuery) ?? false)
+                    ).toList();
                   }
 
                   // 3. Ordenamiento
@@ -854,7 +1005,6 @@ class DashboardScreenState extends State<DashboardScreen> {
                   } else {
                     sourceList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
                   }
-
 
                   if (sourceList.isEmpty) {
                     return Center(
@@ -874,6 +1024,16 @@ class DashboardScreenState extends State<DashboardScreen> {
                         order: sourceList[index], 
                         onEdit: () => _showOrderForm(order: sourceList[index]),
                         onTap: () => showOrderDetail(sourceList[index], viewingUser: _currentUser),
+                        isSelected: _selectedOrderIds.contains(sourceList[index].id),
+                        onSelect: (val) {
+                          setState(() {
+                            if (val == true) {
+                              _selectedOrderIds.add(sourceList[index].id!);
+                            } else {
+                              _selectedOrderIds.remove(sourceList[index].id);
+                            }
+                          });
+                        },
                         onDelete: (order) async {
                           final confirm = await showDialog<bool>(
                             context: context,
@@ -977,6 +1137,7 @@ class DashboardScreenState extends State<DashboardScreen> {
     DateTime selectedDate,
     Function(DateTime) onDateChanged,
     TextEditingController obsController,
+    Function(PlatformFile?) onFileChanged,
     OrderModel? order,
     BuildContext context,
   ) {
@@ -1055,11 +1216,10 @@ class DashboardScreenState extends State<DashboardScreen> {
           FilePickerResult? result = await FilePicker.platform.pickFiles(
             type: FileType.custom,
             allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'mp3'],
+            withData: true, // Asegurar que tengamos los bytes en Web
           );
           if (result != null) {
-            setDialogState(() {
-              selectedFile = result.files.first;
-            });
+            onFileChanged(result.files.first);
           }
         },
         child: Container(
@@ -1105,6 +1265,20 @@ class DashboardScreenState extends State<DashboardScreen> {
                 textAlign: TextAlign.center,
                 overflow: TextOverflow.ellipsis,
               ),
+              if (selectedFile != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: TextButton.icon(
+                    onPressed: () => onFileChanged(null),
+                    icon: const Icon(Icons.close, size: 14, color: Colors.redAccent),
+                    label: const Text("QUITAR", style: TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 4),
               Text(
                 isDragging ? "¡Suelto para adjuntar!" : "Soporta PDF, Word, MP3",

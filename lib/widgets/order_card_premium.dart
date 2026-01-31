@@ -8,6 +8,8 @@ class OrderCardPremium extends StatelessWidget {
   final VoidCallback? onTap;
   final Function(OrderModel)? onDelete; // Nueva función de eliminación
   final bool showEditButton;
+  final bool isSelected;
+  final Function(bool?)? onSelect;
 
   const OrderCardPremium({
     super.key, 
@@ -16,6 +18,8 @@ class OrderCardPremium extends StatelessWidget {
     this.onTap,
     this.onDelete,
     this.showEditButton = true,
+    this.isSelected = false,
+    this.onSelect,
   });
 
   @override
@@ -49,6 +53,21 @@ class OrderCardPremium extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // 0. Checkbox de Selección
+                    if (onSelect != null)
+                      Container(
+                        width: 48,
+                        alignment: Alignment.center,
+                        child: Checkbox(
+                          value: isSelected,
+                          onChanged: onSelect,
+                          activeColor: const Color(0xFF7C3AED),
+                          checkColor: Colors.white,
+                          side: const BorderSide(color: Colors.white24, width: 2),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        ),
+                      ),
+
                     // 1. Barra de Estado Vertical (Izquierda)
                     Container(width: 8, color: mainColor),
                     

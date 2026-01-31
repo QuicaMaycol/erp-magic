@@ -9,6 +9,8 @@ class QCOrderCard extends StatelessWidget {
   final UserModel? editor;
   final VoidCallback onTap;
   final bool showAssigners;
+  final bool isSelected;
+  final Function(bool?)? onSelect;
 
   const QCOrderCard({
     super.key,
@@ -17,14 +19,12 @@ class QCOrderCard extends StatelessWidget {
     this.editor,
     required this.onTap,
     this.showAssigners = true,
+    this.isSelected = false,
+    this.onSelect,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Basic implementation mimicking OrderCardPremium but with Gen/Edit info
-    // For now, I'll keep it simple to fix compilation.
-    // The user can refine the UI later.
-    
     final style = order.statusStyle;
     final Color mainColor = style['color'] as Color;
     final dateFormat = DateFormat('d/M - HH:mm', 'es');
@@ -37,52 +37,72 @@ class QCOrderCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    order.clientName.toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+              if (onSelect != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12.0),
+                  child: Checkbox(
+                    value: isSelected,
+                    onChanged: onSelect,
+                    activeColor: mainColor,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    side: BorderSide(color: Colors.white.withOpacity(0.2), width: 1.5),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: mainColor.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      style['label'] as String,
-                      style: TextStyle(
-                        color: mainColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 10,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Entrega: ${dateFormat.format(order.deliveryDueAt)}',
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-              if (showAssigners) ...[
-                const SizedBox(height: 12),
-                Row(
+                ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildRoleBadge('GEN', generator?.name),
-                    const SizedBox(width: 8),
-                    _buildRoleBadge('EDT', editor?.name),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            order.clientName.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: mainColor.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            style['label'] as String,
+                            style: TextStyle(
+                              color: mainColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Entrega: ${dateFormat.format(order.deliveryDueAt)}',
+                      style: const TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                    if (showAssigners) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          _buildRoleBadge('GEN', generator?.name),
+                          const SizedBox(width: 8),
+                          _buildRoleBadge('EDT', editor?.name),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
-              ],
+              ),
             ],
           ),
         ),

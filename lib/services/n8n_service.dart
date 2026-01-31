@@ -5,6 +5,7 @@ import 'package:http_parser/http_parser.dart';
 
 class N8nService {
   final String _webhookUrl = 'https://mqwebhook.dashbportal.com/webhook/subir-archivo-erp';
+  final String _bulkZipWebhookUrl = 'https://mqwebhook.dashbportal.com/webhook/d175c2d6-ad82-4cd6-bff3-06e19b4add25';
 
   /// Retorna la URL del archivo si n8n la devuelve en el campo 'file_url', o null si no.
   Future<String?> uploadFile({
@@ -97,32 +98,77 @@ class N8nService {
         // Intentar parsear la URL de respuesta
         try {
           final jsonResponse = jsonDecode(response.body);
-          if (jsonResponse is Map) {
-            // Buscamos varias posibles claves para ser más flexibles
-            final url = jsonResponse['file_url'] ?? 
-                        jsonResponse['url'] ?? 
-                        jsonResponse['link'] ?? 
-                        jsonResponse['webViewLink'] ??
-                        jsonResponse['webContentLink'] ??
-                        // Si n8n devuelve el objeto de la fila de Supabase actualizado, buscamos ahí
-                        jsonResponse['base_audio_url'] ??
-                        jsonResponse['script_file_url'] ??
-                        jsonResponse['project_file_url'] ??
-                        jsonResponse['final_audio_url'];
-                        
-            if (url != null && url.toString().isNotEmpty) {
-              String finalUrl = url.toString();
-              // Si parece un ID de Google Drive (alfanumérico de unos 33 caracteres y sin http)
-              if (!finalUrl.startsWith('http') && finalUrl.length > 20) {
-                print("📝 Formateando ID de Drive a URL: $finalUrl");
-                finalUrl = 'https://drive.google.com/uc?export=download&id=$finalUrl';
+          print("🔍 Depuración N8N - Cuerpo: ${response.body}");
+
+          // Función local para buscar URL en cualquier objeto (Mapa o Lista)
+          String? findUrl(dynamic obj, String targetRef) {
+            if (obj is Map) {
+              final keys = obj.keys.map((k) => k.toString().toLowerCase()).toList();
+              final targetLower = targetRef.toLowerCase();
+
+              // 1. Prioridad: claves directas de URL (Exactas o Genéricas)
+              final possibleKeys = ['file_url', 'url', 'link', 'webViewLink', 'webContentLink', targetRef];
+              for (final key in possibleKeys) {
+                final normalizedKey = key.toLowerCase();
+                
+                // Búsqueda manual para evitar TypeError en Web
+                dynamic actualKey;
+                for (final k in obj.keys) {
+                  if (k.toString().toLowerCase() == normalizedKey) {
+                    actualKey = k;
+                    break;
+                  }
+                }
+                
+                if (actualKey != null && obj[actualKey] != null) {
+                  final val = obj[actualKey].toString().trim();
+                  if (val.startsWith('http') || (val.length > 20 && !val.contains(' '))) {
+                    print("✅ Coincidencia encontrada en clave: $actualKey");
+                    return val;
+                  }
+                }
               }
-              print("🔗 URL final: $finalUrl");
-              return finalUrl;
+
+              // 2. Fallback: buscar cualquier clave que CONTENGA el targetRef
+              for (final key in obj.keys) {
+                if (key.toString().toLowerCase().contains(targetLower)) {
+                  final val = obj[key].toString().trim();
+                  if (val.startsWith('http') || (val.length > 20 && !val.contains(' '))) {
+                    return val;
+                  }
+                }
+              }
+
+              // 3. Búsqueda recursiva en sub-objetos
+              for (final value in obj.values) {
+                if (value is Map || value is List) {
+                  final found = findUrl(value, targetRef);
+                  if (found != null) return found;
+                }
+              }
+            } else if (obj is List) {
+              for (final item in obj) {
+                final found = findUrl(item, targetRef);
+                if (found != null) return found;
+              }
             }
+            return null;
           }
+
+          final extractedUrl = findUrl(jsonResponse, structuralReference);
+          
+          if (extractedUrl != null && extractedUrl.isNotEmpty) {
+            String finalUrl = extractedUrl;
+            if (!finalUrl.startsWith('http')) {
+              // Cambiado a /view para permitir previsualización nativa
+              finalUrl = 'https://drive.google.com/file/d/$finalUrl/view';
+            }
+            return finalUrl;
+          }
+          
+          print("⚠️ No se encontró la clave '$structuralReference' ni ninguna URL válida en el JSON.");
         } catch (e) {
-          print("⚠️ No se pudo parsear JSON de respuesta n8n: $e");
+          print("⚠️ Error procesando JSON de n8n: $e");
         }
         
         return null; // Éxito pero sin URL
@@ -140,5 +186,47 @@ class N8nService {
       print("❌ Excepción de conexión: $e");
       throw Exception('Error de conexión: $e');
     }
+  }
+
+  /// Solicita a n8n la generación de un archivo ZIP con varios audios
+  Future<String?> generateBulkZip(List<Map<String, String>> filesData) async {
+    try {
+      print("Solicitando generación de ZIP masivo para ${filesData.length} archivos...");
+      print("POST a: $_bulkZipWebhookUrl");
+
+      final response = await http.post(
+        Uri.parse(_bulkZipWebhookUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'action': 'bulk_zip',
+          'files': filesData,
+        }),
+      );
+
+      print("Status Code ZIP: ${response.statusCode}");
+      print("Response Body ZIP: '${response.body}'");
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if (response.body.trim().isEmpty) {
+          print("⚠️ Alerta: El servidor respondió con éxito pero el cuerpo está vacío. Verifique el nodo 'Respond to Webhook' en n8n.");
+          return null;
+        }
+
+        final jsonResponse = jsonDecode(response.body);
+        
+        // Intentar encontrar la URL de diversas formas igual que en uploadFile
+        if (jsonResponse is Map) {
+          return jsonResponse['zip_url'] ?? jsonResponse['url'] ?? jsonResponse['file_url'] ?? jsonResponse['link'] ?? jsonResponse['id'];
+        } else if (jsonResponse is List && jsonResponse.isNotEmpty) {
+          final first = jsonResponse.first;
+          if (first is Map) {
+            return first['zip_url'] ?? first['url'] ?? first['file_url'] ?? first['link'] ?? first['id'];
+          }
+        }
+      }
+    } catch (e) {
+      print("Error solicitando ZIP masivo: $e");
+    }
+    return null;
   }
 }

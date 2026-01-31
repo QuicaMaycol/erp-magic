@@ -167,7 +167,7 @@ class _EditorViewState extends State<EditorView> {
                                 const Expanded(child: Text("Proyecto cargado", style: TextStyle(color: Colors.purple, fontSize: 13))),
                                 IconButton(
                                   icon: const Icon(Icons.download, color: Colors.white),
-                                  onPressed: () => _orderService.openUrl(tempProjectUrl),
+                                  onPressed: () => _orderService.openUrl(tempProjectUrl, forceDownload: true),
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
@@ -262,13 +262,13 @@ class _EditorViewState extends State<EditorView> {
                                          isUploadingProject = false;
                                        });
                                        await _orderService.updateOrder(order.copyWith(projectFileUrl: n8nUrl));
-                                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Proyecto subido correctamente"), backgroundColor: Colors.green));
+                                       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Proyecto subido correctamente"), backgroundColor: Colors.green));
                                      } else {
                                        setDialogState(() => isUploadingProject = false);
                                      }
                                    } catch (e) {
                                      setDialogState(() => isUploadingProject = false);
-                                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
+                                     if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
                                    }
                                 } else {
                                   setDialogState(() => isUploadingProject = false);
@@ -289,6 +289,25 @@ class _EditorViewState extends State<EditorView> {
                         ),
                         
                         const SizedBox(height: 24),
+                        
+                        // Audio de Muestra (Opcional para Editor)
+                        if (order.audioMuestraUrl != null) ...[
+                          const Text("AUDIO DE MUESTRA (CLIENTE)", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                          const SizedBox(height: 8),
+                          ElevatedButton.icon(
+                            onPressed: () => _orderService.openUrl(order.audioMuestraUrl),
+                            icon: const Icon(Icons.play_circle_outline, color: Colors.tealAccent),
+                            label: const Text("Escuchar Muestra Enviada"),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.teal.withOpacity(0.1),
+                              foregroundColor: Colors.tealAccent,
+                              minimumSize: const Size(double.infinity, 45),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+
                         const Divider(color: Colors.white10),
                         const SizedBox(height: 20),
 
@@ -301,21 +320,23 @@ class _EditorViewState extends State<EditorView> {
                             margin: const EdgeInsets.only(bottom: 12),
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                              color: Colors.blueAccent.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.blueAccent.withOpacity(0.3)),
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.music_video_rounded, color: Colors.blue, size: 20),
+                                const Icon(Icons.check_circle, color: Colors.blueAccent, size: 22),
                                 const SizedBox(width: 12),
-                                const Expanded(child: Text("Edición cargada", style: TextStyle(color: Colors.blue, fontSize: 13))),
+                                const Expanded(child: Text("Edición cargada y lista", style: TextStyle(color: Colors.blueAccent, fontSize: 13, fontWeight: FontWeight.bold))),
                                 IconButton(
-                                  icon: const Icon(Icons.play_arrow, color: Colors.white),
+                                  icon: const Icon(Icons.play_arrow_rounded, color: Colors.white),
                                   onPressed: () => _orderService.openUrl(tempFinalAudioUrl),
+                                  tooltip: "Escuchar",
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                  icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                  tooltip: "Eliminar Audio",
                                   onPressed: () async {
                                     final confirmed = await showDialog<bool>(
                                       context: context,
@@ -371,6 +392,7 @@ class _EditorViewState extends State<EditorView> {
                                     tempFinalAudioUrl = n8nUrl;
                                     isUploadingFinal = false;
                                   });
+                                  await _orderService.updateAudioFinal(order.id!, n8nUrl);
                                   if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Audio final cargado"), backgroundColor: Colors.green));
                                 } else {
                                   setDialogState(() => isUploadingFinal = false);
@@ -408,13 +430,14 @@ class _EditorViewState extends State<EditorView> {
                                          tempFinalAudioUrl = n8nUrl;
                                          isUploadingFinal = false;
                                        });
-                                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Audio final subido a n8n correctamente"), backgroundColor: Colors.green));
+                                       await _orderService.updateAudioFinal(order.id!, n8nUrl);
+                                       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Audio final subido correctamente"), backgroundColor: Colors.green));
                                      } else {
                                        setDialogState(() => isUploadingFinal = false);
                                      }
                                    } catch (e) {
                                      setDialogState(() => isUploadingFinal = false);
-                                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error al subir: $e"), backgroundColor: Colors.red));
+                                     if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error al subir: $e"), backgroundColor: Colors.red));
                                    }
                                 } else {
                                   setDialogState(() => isUploadingFinal = false);
@@ -448,7 +471,7 @@ class _EditorViewState extends State<EditorView> {
                                         await _orderService.completeEdition(order.id!, tempFinalAudioUrl!);
                                         if (mounted) {
                                           Navigator.pop(context);
-                                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Enviado a Control de Calidad con éxito"), backgroundColor: Colors.blueAccent));
+                                          if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Enviado a Control de Calidad con éxito"), backgroundColor: Colors.blueAccent));
                                         }
                                     } catch (e) {
                                       setDialogState(() => isProcessing = false);
