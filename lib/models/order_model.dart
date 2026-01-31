@@ -35,6 +35,7 @@ class OrderModel {
   final String? phone;
   final String? paymentMethod;
   final String? product;
+  final String? audioMuestraUrl;
 
   OrderModel({
     this.id,
@@ -59,6 +60,7 @@ class OrderModel {
     this.phone,
     this.paymentMethod,
     this.product,
+    this.audioMuestraUrl,
   }) : createdAt = createdAt ?? DateTime.now();
 
   // Lógica de Urgencia (Puntos de color)
@@ -175,6 +177,7 @@ class OrderModel {
         phone: json['phone'],
         paymentMethod: json['payment_method'],
         product: json['product'],
+        audioMuestraUrl: json['audio_muestra_url'],
       );
     } catch (e) {
       // Fallback en caso de error crítico de parseo
@@ -211,6 +214,10 @@ class OrderModel {
     String? phone,
     String? paymentMethod,
     String? product,
+    String? audioMuestraUrl,
+    bool clearBaseAudio = false,
+    bool clearFinalAudio = false,
+    bool clearProjectFile = false,
   }) {
     return OrderModel(
       id: id ?? this.id,
@@ -222,9 +229,9 @@ class OrderModel {
       generatorId: generatorId ?? this.generatorId,
       editorId: editorId ?? this.editorId,
       scriptFileUrl: scriptFileUrl ?? this.scriptFileUrl,
-      baseAudioUrl: baseAudioUrl ?? this.baseAudioUrl,
-      finalAudioUrl: finalAudioUrl ?? this.finalAudioUrl,
-      projectFileUrl: projectFileUrl ?? this.projectFileUrl,
+      baseAudioUrl: clearBaseAudio ? null : (baseAudioUrl ?? this.baseAudioUrl),
+      finalAudioUrl: clearFinalAudio ? null : (finalAudioUrl ?? this.finalAudioUrl),
+      projectFileUrl: clearProjectFile ? null : (projectFileUrl ?? this.projectFileUrl),
       generationStartedAt: generationStartedAt ?? this.generationStartedAt,
       generationEndedAt: generationEndedAt ?? this.generationEndedAt,
       editionStartedAt: editionStartedAt ?? this.editionStartedAt,
@@ -235,6 +242,7 @@ class OrderModel {
       phone: phone ?? this.phone,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       product: product ?? this.product,
+      audioMuestraUrl: audioMuestraUrl ?? this.audioMuestraUrl,
     );
   }
 
@@ -260,5 +268,6 @@ class OrderModel {
     'phone': phone,
     'payment_method': paymentMethod,
     'product': product,
+    'audio_muestra_url': audioMuestraUrl,
   };
 }

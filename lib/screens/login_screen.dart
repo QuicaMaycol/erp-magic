@@ -87,6 +87,11 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Image.asset(
+                'img/logo.png',
+                height: 100,
+              ),
+              const SizedBox(height: 16),
               const Text(
                 'ERP Magic Voice',
                 style: TextStyle(

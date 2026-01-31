@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter_dropzone/flutter_dropzone.dart';
 import '../models/order_model.dart';
 import '../models/user_model.dart';
 import '../services/order_service.dart';
 import '../services/auth_service.dart';
 import '../services/n8n_service.dart';
 import '../widgets/order_card_premium.dart';
+import '../widgets/intelligent_phone_field.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -30,6 +34,9 @@ class DashboardScreenState extends State<DashboardScreen> {
   // Nuevos estados para filtros y ordenamiento
   OrderStatus? _statusFilter;
   bool _sortByDelivery = true; // true: Entrega, false: Ingreso
+
+  // Controlador de dropzone persistente
+  DropzoneViewController? _dropzoneController;
 
   @override
   void initState() {
@@ -118,7 +125,11 @@ class DashboardScreenState extends State<DashboardScreen> {
     _showOrderForm(order: order);
   }
 
-  void _showOrderDetail(OrderModel order) {
+  void showOrderDetail(OrderModel order, {UserModel? viewingUser}) {
+    _showOrderDetail(order, viewingUser: viewingUser);
+  }
+
+  void _showOrderDetail(OrderModel order, {UserModel? viewingUser}) {
     bool isProcessing = false;
     showDialog(
       context: context,
@@ -148,7 +159,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                             Expanded(child: _buildDetailRow("PAÍS", order.country!)),
                           if (order.country != null && order.country!.isNotEmpty && order.price != null)
                             const SizedBox(width: 16),
-                          if (order.price != null)
+                          if (order.price != null && viewingUser?.role != UserRole.control_calidad)
                             Expanded(child: _buildDetailRow("PRECIO", "\$${order.price!.toStringAsFixed(2)}")),
                        ],
                      ),
@@ -393,6 +404,7 @@ class DashboardScreenState extends State<DashboardScreen> {
     PlatformFile? selectedFile;
     bool hasExistingFile = order?.scriptFileUrl != null && order!.scriptFileUrl!.isNotEmpty;
     bool isUploading = false;
+    bool isDragging = false; // Estado para arrastre
 
     showDialog(
       context: context,
@@ -414,184 +426,89 @@ class DashboardScreenState extends State<DashboardScreen> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Text('Nueva Orden de Trabajo', 
               style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-            content: SizedBox(
-              width: MediaQuery.of(context).size.width * 0.9,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildField(clientController, 'Cliente', icon: Icons.person_outline),
-                    const SizedBox(height: 12),
-                    _buildField(scriptController, 'Texto / Guion', maxLines: 3, icon: Icons.description_outlined),
-                    const SizedBox(height: 12),
-                    _buildField(productController, 'Producto', icon: Icons.inventory_2_outlined),
-                    const SizedBox(height: 12),
-                    
-                    Row(
-                      children: [
-                        Expanded(child: _buildField(countryController, 'País', icon: Icons.public)),
-                        const SizedBox(width: 12),
-                         Expanded(child: _buildField(priceController, 'Precio', icon: Icons.attach_money, keyboardType: TextInputType.number)),
-                       ],
-                     ),
-                     const SizedBox(height: 12),
-                     Row(
-                       children: [
-                         Expanded(child: _buildField(phoneController, 'WhatsApp/Celular', icon: Icons.phone_android, keyboardType: TextInputType.phone)),
-                        const SizedBox(width: 12),
-                        Expanded(child: _buildField(paymentController, 'Medio de Pago', icon: Icons.payment)),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    
-                    // Botón de selección de archivo (n8n integration)
-                    InkWell(
-                      onTap: isUploading ? null : () async {
-                        FilePickerResult? result = await FilePicker.platform.pickFiles(
-                          type: FileType.custom,
-                          allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'mp3'],
-                        );
-                        if (result != null) {
+            content: Stack(
+              children: [
+                // DropTarget invisible que cubre todo el modal
+                Positioned.fill(
+                  child: DropTarget(
+                    onDragDone: (details) async {
+                      print("DEBUG: Drop detectado (Unificado)");
+                      if (details.files.isNotEmpty) {
+                        try {
+                          final file = details.files.first;
+                          
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text("Leyendo archivo..."), duration: Duration(milliseconds: 500))
+                            );
+                          }
+
+                          final bytes = await file.readAsBytes();
+                          
                           setDialogState(() {
-                            selectedFile = result.files.first;
+                            selectedFile = PlatformFile(
+                              name: file.name,
+                              size: bytes.length,
+                              bytes: bytes,
+                            );
+                            isDragging = false;
                           });
+
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text("✅ Archivo listo: ${file.name}"),
+                                backgroundColor: Colors.green,
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          print("DEBUG: Error en Drop: $e");
+                          setDialogState(() => isDragging = false);
                         }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: (selectedFile != null || hasExistingFile) ? Colors.green.withOpacity(0.5) : Colors.transparent
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            if (isUploading)
-                               const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF7C3AED)))
-                            else
-                              Icon(
-                                (selectedFile != null || hasExistingFile) ? Icons.check_circle : Icons.attach_file,
-                                color: (selectedFile != null || hasExistingFile) ? Colors.green : const Color(0xFF7C3AED),
-                                size: 20
-                              ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                selectedFile != null 
-                                  ? "Seleccionado: ${selectedFile!.name}" 
-                                  : (hasExistingFile ? "Archivo adjunto previamente" : "Adjuntar Archivo"),
-                                style: TextStyle(
-                                  color: (selectedFile != null || hasExistingFile) ? Colors.green : Colors.white70,
-                                  fontSize: 14
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (selectedFile != null && !isUploading)
-                              IconButton(
-                                icon: const Icon(Icons.close, color: Colors.white38, size: 18),
-                                onPressed: () => setDialogState(() => selectedFile = null),
-                              )
-                          ],
+                      }
+                    },
+                    onDragEntered: (details) => setDialogState(() => isDragging = true),
+                    onDragExited: (details) => setDialogState(() => isDragging = false),
+                    child: Container(color: Colors.transparent),
+                  ),
+                ),
+                
+                // Formulario (Ignora gestos durante el arrastre para no tapar el DropTarget)
+                IgnorePointer(
+                  ignoring: isDragging,
+                  child: SizedBox(
+                    width: MediaQuery.of(context).size.width * 0.9,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: _buildFormContent(
+                          setDialogState, 
+                          clientController, 
+                          scriptController, 
+                          productController, 
+                          phoneController, 
+                          countryController, 
+                          priceController, 
+                          paymentController, 
+                          isDragging, 
+                          selectedFile, 
+                          hasExistingFile, 
+                          isUploading, 
+                          selectedDate, 
+                          (newDate) => setDialogState(() => selectedDate = newDate), // Callback para actualización real
+                          obsController, 
+                          order, 
+                          context
                         ),
                       ),
                     ),
-                    
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: InkWell(
-                            onTap: () async {
-                              final date = await showDatePicker(
-                                context: context,
-                                initialDate: selectedDate,
-                                firstDate: DateTime.now(),
-                                lastDate: DateTime.now().add(const Duration(days: 365)),
-                              );
-                              if (date != null) {
-                                setDialogState(() => selectedDate = DateTime(
-                                  date.year, date.month, date.day,
-                                  selectedDate.hour, selectedDate.minute,
-                                ));
-                              }
-                            },
-                            child: _buildValueBox(
-                              label: 'Fecha',
-                              value: DateFormat('dd/MM/yyyy', 'es').format(selectedDate),
-                              icon: Icons.calendar_today_rounded,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: InkWell(
-                            onTap: () async {
-                              final time = await showTimePicker(
-                                context: context,
-                                initialTime: TimeOfDay.fromDateTime(selectedDate),
-                                cancelText: 'CANCELAR',
-                                confirmText: 'ACEPTAR',
-                                helpText: 'SELECCIONAR HORA',
-                                builder: (context, child) {
-                                  return Localizations.override(
-                                    context: context,
-                                    locale: const Locale('en', 'US'),
-                                    child: MediaQuery(
-                                      data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
-                                      child: Theme(
-                                        data: Theme.of(context).copyWith(
-                                          materialTapTargetSize: MaterialTapTargetSize.padded,
-                                          timePickerTheme: TimePickerThemeData(
-                                            backgroundColor: const Color(0xFF1E1E24),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                            dialBackgroundColor: const Color(0xFF2A2A35),
-                                            dialHandColor: const Color(0xFF7C3AED),
-                                            dialTextColor: Colors.white,
-                                            hourMinuteShape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-                                            hourMinuteColor: MaterialStateColor.resolveWith((states) => 
-                                                states.contains(MaterialState.selected) ? const Color(0xFF7C3AED).withOpacity(0.2) : const Color(0xFF2A2A35)),
-                                            hourMinuteTextColor: MaterialStateColor.resolveWith((states) => 
-                                                states.contains(MaterialState.selected) ? const Color(0xFF7C3AED) : Colors.white),
-                                            dayPeriodShape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
-                                            dayPeriodColor: MaterialStateColor.resolveWith((states) => 
-                                                states.contains(MaterialState.selected) ? const Color(0xFF7C3AED) : Colors.transparent),
-                                            dayPeriodTextColor: MaterialStateColor.resolveWith((states) => 
-                                                states.contains(MaterialState.selected) ? Colors.white : Colors.white70),
-                                            dayPeriodBorderSide: const BorderSide(color: Color(0xFF7C3AED)),
-                                          ),
-                                        ),
-                                        child: child!,
-                                      ),
-                                    ),
-                                  );
-                                },
-                              );
-                              if (time != null) {
-                                setDialogState(() => selectedDate = DateTime(
-                                  selectedDate.year, selectedDate.month, selectedDate.day,
-                                  time.hour, time.minute,
-                                ));
-                              }
-                            },
-                            child: _buildValueBox(
-                              label: 'Hora',
-                              value: DateFormat('hh:mm a', 'es').format(selectedDate).toUpperCase(),
-                              icon: Icons.access_time_rounded,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    _buildField(obsController, 'Observaciones', icon: Icons.comment_outlined),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-            actions: [
+      actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: const Text('CANCELAR', style: TextStyle(color: Colors.white38, fontWeight: FontWeight.bold)),
@@ -730,6 +647,119 @@ class DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Widget _buildQuickSelect({
+    required StateSetter setDialogState,
+    required TextEditingController controller,
+    required List<String> options,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: options.map((option) {
+            final isSelected = controller.text == option;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: InkWell(
+                onTap: () {
+                  setDialogState(() {
+                    controller.text = option;
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected ? const Color(0xFF7C3AED).withOpacity(0.2) : Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected ? const Color(0xFF7C3AED) : Colors.transparent,
+                      width: 1,
+                    ),
+                  ),
+                  child: Text(
+                    option,
+                    style: TextStyle(
+                      color: isSelected ? const Color(0xFF7C3AED) : Colors.white60,
+                      fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimeQuickSelect({
+    required StateSetter setDialogState,
+    required DateTime selectedDate,
+    required Function(DateTime) onTimeSelected,
+  }) {
+    final times = [
+      {'label': '10:00 AM', 'hour': 10, 'minute': 0},
+      {'label': '11:00 AM', 'hour': 11, 'minute': 0},
+      {'label': '12:00 PM', 'hour': 12, 'minute': 0},
+      {'label': '02:00 PM', 'hour': 14, 'minute': 0},
+      {'label': '03:00 PM', 'hour': 15, 'minute': 0},
+      {'label': '04:00 PM', 'hour': 16, 'minute': 0},
+      {'label': '05:00 PM', 'hour': 17, 'minute': 0},
+    ];
+
+    return SizedBox(
+      width: double.infinity,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: times.map((time) {
+            final hour = time['hour'] as int;
+            final minute = time['minute'] as int;
+            final isSelected = selectedDate.hour == hour && selectedDate.minute == minute;
+            
+            return Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: InkWell(
+                onTap: () {
+                  setDialogState(() {
+                    onTimeSelected(DateTime(
+                      selectedDate.year,
+                      selectedDate.month,
+                      selectedDate.day,
+                      hour,
+                      minute,
+                    ));
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected ? const Color(0xFF7C3AED).withOpacity(0.2) : Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected ? const Color(0xFF7C3AED) : Colors.transparent,
+                      width: 1,
+                    ),
+                  ),
+                  child: Text(
+                    time['label'] as String,
+                    style: TextStyle(
+                      color: isSelected ? const Color(0xFF7C3AED) : Colors.white60,
+                      fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
   Widget _buildValueBox({required String label, required String value, required IconData icon}) {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -843,7 +873,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                       child: OrderCardPremium(
                         order: sourceList[index], 
                         onEdit: () => _showOrderForm(order: sourceList[index]),
-                        onTap: () => _showOrderDetail(sourceList[index]),
+                        onTap: () => showOrderDetail(sourceList[index], viewingUser: _currentUser),
                         onDelete: (order) async {
                           final confirm = await showDialog<bool>(
                             context: context,
@@ -929,6 +959,266 @@ class DashboardScreenState extends State<DashboardScreen> {
         ),
       ],
     );
+  }
+
+  List<Widget> _buildFormContent(
+    StateSetter setDialogState,
+    TextEditingController clientController,
+    TextEditingController scriptController,
+    TextEditingController productController,
+    TextEditingController phoneController,
+    TextEditingController countryController,
+    TextEditingController priceController,
+    TextEditingController paymentController,
+    bool isDragging,
+    PlatformFile? selectedFile,
+    bool hasExistingFile,
+    bool isUploading,
+    DateTime selectedDate,
+    Function(DateTime) onDateChanged,
+    TextEditingController obsController,
+    OrderModel? order,
+    BuildContext context,
+  ) {
+    return [
+      _buildField(clientController, 'Cliente', icon: Icons.person_outline),
+      const SizedBox(height: 12),
+      _buildField(scriptController, 'Texto / Guion', maxLines: 3, icon: Icons.description_outlined),
+      const SizedBox(height: 12),
+      _buildField(productController, 'Producto', icon: Icons.inventory_2_outlined),
+      const SizedBox(height: 8),
+      _buildQuickSelect(
+        setDialogState: setDialogState,
+        controller: productController,
+        options: ['Audiobebe', 'audiobebe+video', 'invitaciones', 'invitaciones+video', 'Cancion', 'cancion+video', 'Animacion'],
+      ),
+      const SizedBox(height: 12),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 3,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                IntelligentPhoneField(
+                  initialValue: phoneController.text,
+                  onChanged: (fullNumber, countryName, isoCode) {
+                    phoneController.text = fullNumber;
+                    countryController.text = countryName;
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: Column(
+              children: [
+                _buildField(priceController, 'Precio', icon: Icons.attach_money, keyboardType: TextInputType.number),
+                const SizedBox(height: 8),
+                _buildQuickSelect(
+                  setDialogState: setDialogState,
+                  controller: priceController,
+                  options: ['55', '65', '25', '45', '35', '16.4'],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              children: [
+                _buildField(paymentController, 'Medio de Pago', icon: Icons.payment),
+                const SizedBox(height: 8),
+                _buildQuickSelect(
+                  setDialogState: setDialogState,
+                  controller: paymentController,
+                  options: ['paypal', 'hotmar', 'ria', 'remitli', 'globas66', 'yape'],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      
+      // Botón de selección de archivo mejorado
+      InkWell(
+        onTap: isUploading ? null : () async {
+          FilePickerResult? result = await FilePicker.platform.pickFiles(
+            type: FileType.custom,
+            allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'mp3'],
+          );
+          if (result != null) {
+            setDialogState(() {
+              selectedFile = result.files.first;
+            });
+          }
+        },
+        child: Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 100),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          decoration: BoxDecoration(
+            color: isDragging 
+                ? const Color(0xFF7C3AED).withOpacity(0.15) 
+                : Colors.white.withOpacity(0.04),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDragging 
+                  ? const Color(0xFF7C3AED) 
+                  : (selectedFile != null || hasExistingFile) 
+                      ? Colors.green.withOpacity(0.6) 
+                      : Colors.white.withOpacity(0.1),
+              width: isDragging ? 2.5 : 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (isUploading)
+                const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF7C3AED)))
+              else
+                Icon(
+                  (selectedFile != null || hasExistingFile) ? Icons.check_circle_rounded : Icons.cloud_upload_rounded,
+                  color: (selectedFile != null || hasExistingFile) ? Colors.green : const Color(0xFF7C3AED),
+                  size: 32
+                ),
+              const SizedBox(height: 12),
+              Text(
+                selectedFile != null 
+                  ? "Seleccionado: ${selectedFile!.name}" 
+                  : (hasExistingFile ? "Archivo adjunto previamente" : "Haz clic o arrastra un archivo"),
+                style: TextStyle(
+                  color: (selectedFile != null || hasExistingFile) ? Colors.green : Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                isDragging ? "¡Suelto para adjuntar!" : "Soporta PDF, Word, MP3",
+                style: TextStyle(
+                  color: isDragging ? const Color(0xFF7C3AED) : Colors.white24, 
+                  fontSize: 11,
+                  fontWeight: isDragging ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      
+      const SizedBox(height: 12),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: () async {
+                final date = await showDatePicker(
+                  context: context,
+                  initialDate: selectedDate,
+                  firstDate: DateTime.now(),
+                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                );
+                if (date != null) {
+                  onDateChanged(DateTime(
+                    date.year, date.month, date.day,
+                    selectedDate.hour, selectedDate.minute,
+                  ));
+                }
+              },
+              child: _buildValueBox(
+                label: 'Fecha',
+                value: DateFormat('dd/MM/yyyy', 'es').format(selectedDate),
+                icon: Icons.calendar_today_rounded,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              children: [
+                InkWell(
+                  onTap: () async {
+                    final time = await showTimePicker(
+                      context: context,
+                      initialTime: TimeOfDay.fromDateTime(selectedDate),
+                      cancelText: 'CANCELAR',
+                      confirmText: 'ACEPTAR',
+                      helpText: 'SELECCIONAR HORA',
+                      builder: (context, child) {
+                        return Localizations.override(
+                          context: context,
+                          locale: const Locale('en', 'US'),
+                          child: MediaQuery(
+                            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
+                            child: Theme(
+                              data: Theme.of(context).copyWith(
+                                materialTapTargetSize: MaterialTapTargetSize.padded,
+                                timePickerTheme: TimePickerThemeData(
+                                  backgroundColor: const Color(0xFF1E1E24),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                  dialBackgroundColor: const Color(0xFF2A2A35),
+                                  dialHandColor: const Color(0xFF7C3AED),
+                                  dialTextColor: Colors.white,
+                                  hourMinuteShape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                                  hourMinuteColor: MaterialStateColor.resolveWith((states) => 
+                                      states.contains(MaterialState.selected) ? const Color(0xFF7C3AED).withOpacity(0.2) : const Color(0xFF2A2A35)),
+                                  hourMinuteTextColor: MaterialStateColor.resolveWith((states) => 
+                                      states.contains(MaterialState.selected) ? const Color(0xFF7C3AED) : Colors.white),
+                                  dayPeriodShape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+                                  dayPeriodColor: MaterialStateColor.resolveWith((states) => 
+                                      states.contains(MaterialState.selected) ? const Color(0xFF7C3AED) : Colors.transparent),
+                                  dayPeriodTextColor: MaterialStateColor.resolveWith((states) => 
+                                      states.contains(MaterialState.selected) ? Colors.white : Colors.white70),
+                                  dayPeriodBorderSide: const BorderSide(color: Color(0xFF7C3AED)),
+                                ),
+                              ),
+                              child: child!,
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                    if (time != null) {
+                      onDateChanged(DateTime(
+                        selectedDate.year, selectedDate.month, selectedDate.day,
+                        time.hour, time.minute,
+                      ));
+                    }
+                  },
+                  child: _buildValueBox(
+                    label: 'Hora',
+                    value: DateFormat('hh:mm a', 'es').format(selectedDate).toUpperCase(),
+                    icon: Icons.access_time_rounded,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _buildTimeQuickSelect(
+                  setDialogState: setDialogState,
+                  selectedDate: selectedDate,
+                  onTimeSelected: (newDate) => onDateChanged(newDate),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      _buildField(obsController, 'Observaciones', icon: Icons.comment_outlined),
+    ];
   }
 
   Widget _filterChip(String label, OrderStatus? status) {

@@ -19,8 +19,12 @@ class N8nService {
     String fileType;
     if (structuralReference == 'script_file_url') {
       fileType = 'word';
-    } else if (structuralReference == 'base_audio_url' || structuralReference == 'final_audio_url') {
+    } else if (structuralReference == 'base_audio_url') {
       fileType = 'mp3';
+    } else if (structuralReference == 'final_audio_url') {
+      fileType = 'final'; 
+    } else if (structuralReference == 'audio_muestra_url') {
+      fileType = 'muestra';
     } else if (structuralReference == 'project_file_url') {
       fileType = 'aup3';
     } else {
@@ -107,8 +111,14 @@ class N8nService {
                         jsonResponse['final_audio_url'];
                         
             if (url != null && url.toString().isNotEmpty) {
-              print("🔗 URL detectada en respuesta n8n: $url");
-              return url.toString();
+              String finalUrl = url.toString();
+              // Si parece un ID de Google Drive (alfanumérico de unos 33 caracteres y sin http)
+              if (!finalUrl.startsWith('http') && finalUrl.length > 20) {
+                print("📝 Formateando ID de Drive a URL: $finalUrl");
+                finalUrl = 'https://drive.google.com/uc?export=download&id=$finalUrl';
+              }
+              print("🔗 URL final: $finalUrl");
+              return finalUrl;
             }
           }
         } catch (e) {

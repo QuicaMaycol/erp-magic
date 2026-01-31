@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import '../models/order_model.dart';
 import '../models/user_model.dart';
 import '../services/order_service.dart';
@@ -43,6 +44,8 @@ class _EditorViewState extends State<EditorView> {
     bool isUploadingProject = false; // Estado independiente para Proyecto
     bool isUploadingFinal = false;   // Estado independiente para Audio Final
     bool isProcessing = false;
+    bool isDraggingProject = false;
+    bool isDraggingFinal = false;
 
     showDialog(
       context: context,
@@ -59,295 +62,415 @@ class _EditorViewState extends State<EditorView> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildDetailRow("CLIENTE", order.clientName),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                       Expanded(child: _buildDetailRow("INGRESO", DateFormat('dd/MM - HH:mm').format(order.createdAt))),
-                       const SizedBox(width: 16),
-                       Expanded(child: _buildDetailRow("ENTREGA", DateFormat('dd/MM - HH:mm').format(order.deliveryDueAt))),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  
-                  const Text("TEXTO / GUION", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                  const SizedBox(height: 6),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(8)),
-                    child: Text(
-                      (order.scriptText != null && order.scriptText!.isNotEmpty) ? order.scriptText! : "Sin texto especificado", 
-                      style: TextStyle(
-                        color: (order.scriptText != null && order.scriptText!.isNotEmpty) ? Colors.white70 : Colors.white24, 
-                        fontSize: 13,
-                      ), 
-                      maxLines: 6, 
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 16),
-
-                  const Text("ARCHIVO ADJUNTO", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                  const SizedBox(height: 6),
-                  if (order.scriptFileUrl != null && order.scriptFileUrl!.isNotEmpty)
-                    ElevatedButton.icon(
-                      onPressed: () => _orderService.openUrl(order.scriptFileUrl),
-                      icon: const Icon(Icons.file_present_rounded),
-                      label: const Text("Ver Documento Adjunto"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2A2A35), 
-                        foregroundColor: Colors.blueAccent,
-                        minimumSize: const Size(double.infinity, 45),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                    )
-                  else
-                    const Text("No hay archivo adjunto", style: TextStyle(color: Colors.white24, fontSize: 13, fontStyle: FontStyle.italic)),
-
-                  const SizedBox(height: 20),
-
-                  // Escuchar Audio Base (del Generador)
-                  const Text("AUDIO BASE (LOCUCIÓN)", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                  const SizedBox(height: 8),
-                  if (order.baseAudioUrl != null)
-                    Column(
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: () => _orderService.openUrl(order.baseAudioUrl),
-                          icon: const Icon(Icons.play_circle_fill, color: Colors.amber),
-                          label: const Text("Escuchar Locución Original"),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.amber.withOpacity(0.1),
-                            foregroundColor: Colors.amber,
-                            minimumSize: const Size(double.infinity, 45),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        _buildDetailRow("CLIENTE", order.clientName),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                             Expanded(child: _buildDetailRow("INGRESO", DateFormat('dd/MM - HH:mm').format(order.createdAt))),
+                             const SizedBox(width: 16),
+                             Expanded(child: _buildDetailRow("ENTREGA", DateFormat('dd/MM - HH:mm').format(order.deliveryDueAt))),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        
+                        const Text("TEXTO / GUION", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                        const SizedBox(height: 6),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(8)),
+                          child: Text(
+                            (order.scriptText != null && order.scriptText!.isNotEmpty) ? order.scriptText! : "Sin texto especificado", 
+                            style: TextStyle(
+                              color: (order.scriptText != null && order.scriptText!.isNotEmpty) ? Colors.white70 : Colors.white24, 
+                              fontSize: 13,
+                            ), 
+                            maxLines: 6, 
                           ),
                         ),
+                        
+                        const SizedBox(height: 16),
+
+                        const Text("ARCHIVO ADJUNTO", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                        const SizedBox(height: 6),
+                        if (order.scriptFileUrl != null && order.scriptFileUrl!.isNotEmpty)
+                          ElevatedButton.icon(
+                            onPressed: () => _orderService.openUrl(order.scriptFileUrl),
+                            icon: const Icon(Icons.file_present_rounded),
+                            label: const Text("Ver Documento Adjunto"),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2A2A35), 
+                              foregroundColor: Colors.blueAccent,
+                              minimumSize: const Size(double.infinity, 45),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          )
+                        else
+                          const Text("No hay archivo adjunto", style: TextStyle(color: Colors.white24, fontSize: 13, fontStyle: FontStyle.italic)),
+
+                        const SizedBox(height: 20),
+
+                        // Escuchar Audio Base (del Generador)
+                        const Text("AUDIO BASE (LOCUCIÓN)", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
                         const SizedBox(height: 8),
-                        OutlinedButton.icon(
-                          onPressed: () => _orderService.openUrl(order.baseAudioUrl),
-                          icon: const Icon(Icons.download_rounded, color: Colors.blueAccent),
-                          label: const Text("Descargar Locución"),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.blueAccent,
-                            side: BorderSide(color: Colors.blueAccent.withOpacity(0.5)),
-                            minimumSize: const Size(double.infinity, 45),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        if (order.baseAudioUrl != null)
+                          Column(
+                            children: [
+                              ElevatedButton.icon(
+                                onPressed: () => _orderService.openUrl(order.baseAudioUrl),
+                                icon: const Icon(Icons.play_circle_fill, color: Colors.amber),
+                                label: const Text("Escuchar Locución Original"),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.amber.withOpacity(0.1),
+                                  foregroundColor: Colors.amber,
+                                  minimumSize: const Size(double.infinity, 45),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              OutlinedButton.icon(
+                                onPressed: () => _orderService.openUrl(order.baseAudioUrl),
+                                icon: const Icon(Icons.download_rounded, color: Colors.blueAccent),
+                                label: const Text("Descargar Locución"),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.blueAccent,
+                                  side: BorderSide(color: Colors.blueAccent.withOpacity(0.5)),
+                                  minimumSize: const Size(double.infinity, 45),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ],
+                          )
+                        else
+                          const Text("No hay audio base cargado", style: TextStyle(color: Colors.white24, fontSize: 13, fontStyle: FontStyle.italic)),
+
+                        const SizedBox(height: 20),
+                        const Divider(color: Colors.white10),
+                        const SizedBox(height: 20),
+
+                        // Proyecto Editable
+                        const Text("ARCHIVO DE PROYECTO (.AUP3 / ZIP)", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                        const SizedBox(height: 8),
+                        if (tempProjectUrl != null)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.purple.withOpacity(0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.folder_zip, color: Colors.purple, size: 20),
+                                const SizedBox(width: 12),
+                                const Expanded(child: Text("Proyecto cargado", style: TextStyle(color: Colors.purple, fontSize: 13))),
+                                IconButton(
+                                  icon: const Icon(Icons.download, color: Colors.white),
+                                  onPressed: () => _orderService.openUrl(tempProjectUrl),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                  onPressed: () async {
+                                    final confirmed = await showDialog<bool>(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                        backgroundColor: const Color(0xFF1B1B21),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                        title: const Text("¿Eliminar proyecto?", style: TextStyle(color: Colors.white, fontSize: 16)),
+                                        content: const Text("Se eliminará el archivo de proyecto de forma permanente.", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                                        actions: [
+                                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("CANCELAR")),
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(ctx, true), 
+                                            child: const Text("ELIMINAR", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold))
+                                          ),
+                                        ],
+                                      ),
+                                    );
+
+                                    if (confirmed == true) {
+                                      setDialogState(() => tempProjectUrl = null);
+                                      try {
+                                        await _orderService.updateOrder(order.copyWith(clearProjectFile: true));
+                                      } catch (e) {
+                                        print("Error eliminando proyecto: $e");
+                                      }
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+
+                        DropTarget(
+                          onDragDone: (details) async {
+                            if (details.files.isNotEmpty && !isUploadingProject) {
+                              final file = details.files.first;
+                              setDialogState(() {
+                                isDraggingProject = false;
+                                isUploadingProject = true;
+                              });
+
+                              try {
+                                final bytes = await file.readAsBytes();
+                                final n8nUrl = await _n8nService.uploadFile(
+                                  clientName: order.clientName,
+                                  orderId: order.id.toString(),
+                                  file: PlatformFile(name: file.name, size: bytes.length, bytes: bytes),
+                                  structuralReference: 'project_file_url', 
+                                );
+
+                                if (n8nUrl != null) {
+                                  setDialogState(() {
+                                    tempProjectUrl = n8nUrl;
+                                    isUploadingProject = false;
+                                  });
+                                  await _orderService.updateOrder(order.copyWith(projectFileUrl: n8nUrl));
+                                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Proyecto cargado"), backgroundColor: Colors.green));
+                                } else {
+                                  setDialogState(() => isUploadingProject = false);
+                                }
+                              } catch (e) {
+                                setDialogState(() => isUploadingProject = false);
+                                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error: $e"), backgroundColor: Colors.red));
+                              }
+                            }
+                          },
+                          onDragEntered: (_) => setDialogState(() => isDraggingProject = true),
+                          onDragExited: (_) => setDialogState(() => isDraggingProject = false),
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: 45,
+                            child: OutlinedButton.icon(
+                              onPressed: (isUploadingProject || isUploadingFinal) ? null : () async {
+                                setDialogState(() => isUploadingProject = true);
+                                FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.any);
+
+                                if (result != null) {
+                                   try {
+                                     final n8nUrl = await _n8nService.uploadFile(
+                                       clientName: order.clientName,
+                                       orderId: order.id.toString(),
+                                       file: result.files.first,
+                                       structuralReference: 'project_file_url', 
+                                     );
+
+                                     if (n8nUrl != null) {
+                                       setDialogState(() {
+                                         tempProjectUrl = n8nUrl;
+                                         isUploadingProject = false;
+                                       });
+                                       await _orderService.updateOrder(order.copyWith(projectFileUrl: n8nUrl));
+                                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Proyecto subido correctamente"), backgroundColor: Colors.green));
+                                     } else {
+                                       setDialogState(() => isUploadingProject = false);
+                                     }
+                                   } catch (e) {
+                                     setDialogState(() => isUploadingProject = false);
+                                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
+                                   }
+                                } else {
+                                  setDialogState(() => isUploadingProject = false);
+                                }
+                              },
+                              icon: isUploadingProject 
+                                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                                  : const Icon(Icons.upload_file),
+                              label: Text(tempProjectUrl == null ? "SUBIR PROYECTO EDITABLE" : "REEMPLAZAR PROYECTO"),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.purpleAccent,
+                                backgroundColor: isDraggingProject ? Colors.purpleAccent.withOpacity(0.1) : null,
+                                side: BorderSide(color: isDraggingProject ? Colors.purpleAccent : Colors.purpleAccent.withOpacity(0.5), width: isDraggingProject ? 2 : 1),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 24),
+                        const Divider(color: Colors.white10),
+                        const SizedBox(height: 20),
+
+                        // Subida de Audio Final
+                        const Text("AUDIO FINAL EDITADO", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                        const SizedBox(height: 12),
+                        
+                        if (tempFinalAudioUrl != null)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.music_video_rounded, color: Colors.blue, size: 20),
+                                const SizedBox(width: 12),
+                                const Expanded(child: Text("Edición cargada", style: TextStyle(color: Colors.blue, fontSize: 13))),
+                                IconButton(
+                                  icon: const Icon(Icons.play_arrow, color: Colors.white),
+                                  onPressed: () => _orderService.openUrl(tempFinalAudioUrl),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                  onPressed: () async {
+                                    final confirmed = await showDialog<bool>(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                        backgroundColor: const Color(0xFF1B1B21),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                        title: const Text("¿Eliminar audio final?", style: TextStyle(color: Colors.white, fontSize: 16)),
+                                        content: const Text("Se eliminará el audio editado de forma permanente.", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                                        actions: [
+                                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("CANCELAR")),
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(ctx, true), 
+                                            child: const Text("ELIMINAR", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold))
+                                          ),
+                                        ],
+                                      ),
+                                    );
+
+                                    if (confirmed == true) {
+                                      setDialogState(() => tempFinalAudioUrl = null);
+                                      try {
+                                        await _orderService.updateOrder(order.copyWith(clearFinalAudio: true));
+                                      } catch (e) {
+                                        print("Error eliminando audio final: $e");
+                                      }
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+
+                        DropTarget(
+                          onDragDone: (details) async {
+                            if (details.files.isNotEmpty && !isUploadingFinal) {
+                              final file = details.files.first;
+                              setDialogState(() {
+                                isDraggingFinal = false;
+                                isUploadingFinal = true;
+                              });
+
+                              try {
+                                final bytes = await file.readAsBytes();
+                                final n8nUrl = await _n8nService.uploadFile(
+                                  clientName: order.clientName,
+                                  orderId: order.id.toString(),
+                                  file: PlatformFile(name: file.name, size: bytes.length, bytes: bytes),
+                                  structuralReference: 'final_audio_url', 
+                                );
+
+                                if (n8nUrl != null) {
+                                  setDialogState(() {
+                                    tempFinalAudioUrl = n8nUrl;
+                                    isUploadingFinal = false;
+                                  });
+                                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Audio final cargado"), backgroundColor: Colors.green));
+                                } else {
+                                  setDialogState(() => isUploadingFinal = false);
+                                }
+                              } catch (e) {
+                                setDialogState(() => isUploadingFinal = false);
+                                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error: $e"), backgroundColor: Colors.red));
+                              }
+                            }
+                          },
+                          onDragEntered: (_) => setDialogState(() => isDraggingFinal = true),
+                          onDragExited: (_) => setDialogState(() => isDraggingFinal = false),
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: 45,
+                            child: OutlinedButton.icon(
+                              onPressed: (isUploadingFinal || isUploadingProject) ? null : () async {
+                                setDialogState(() => isUploadingFinal = true);
+                                FilePickerResult? result = await FilePicker.platform.pickFiles(
+                                  type: FileType.custom,
+                                  allowedExtensions: ['mp3', 'wav', 'm4a'],
+                                );
+
+                                if (result != null) {
+                                   try {
+                                     final n8nUrl = await _n8nService.uploadFile(
+                                       clientName: order.clientName,
+                                       orderId: order.id.toString(),
+                                       file: result.files.first,
+                                       structuralReference: 'final_audio_url', 
+                                     );
+
+                                     if (n8nUrl != null) {
+                                       setDialogState(() {
+                                         tempFinalAudioUrl = n8nUrl;
+                                         isUploadingFinal = false;
+                                       });
+                                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Audio final subido a n8n correctamente"), backgroundColor: Colors.green));
+                                     } else {
+                                       setDialogState(() => isUploadingFinal = false);
+                                     }
+                                   } catch (e) {
+                                     setDialogState(() => isUploadingFinal = false);
+                                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error al subir: $e"), backgroundColor: Colors.red));
+                                   }
+                                } else {
+                                  setDialogState(() => isUploadingFinal = false);
+                                }
+                              },
+                              icon: isUploadingFinal 
+                                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                                  : const Icon(Icons.cloud_upload_outlined),
+                              label: Text(tempFinalAudioUrl == null ? "SUBIR PRODUCTO FINAL" : "REEMPLAZAR ARCHIVO"),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                backgroundColor: isDraggingFinal ? Colors.white.withOpacity(0.1) : null,
+                                side: BorderSide(color: isDraggingFinal ? Colors.white : Colors.white.withOpacity(0.2), width: isDraggingFinal ? 2 : 1),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+                        
+                        // Botón Listo
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            onPressed: (tempFinalAudioUrl != null && !isProcessing) 
+                                ? () async {
+                                    setDialogState(() => isProcessing = true);
+                                    try {
+                                        await _orderService.completeEdition(order.id!, tempFinalAudioUrl!);
+                                        if (mounted) {
+                                          Navigator.pop(context);
+                                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Enviado a Control de Calidad con éxito"), backgroundColor: Colors.blueAccent));
+                                        }
+                                    } catch (e) {
+                                      setDialogState(() => isProcessing = false);
+                                    }
+                                  } 
+                                : null,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF7C3AED),
+                              disabledBackgroundColor: Colors.white10,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: isProcessing 
+                                ? const CircularProgressIndicator(color: Colors.white) 
+                                : const Text("LISTO (ENVIAR A REVISIÓN)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                           ),
                         ),
                       ],
-                    )
-                  else
-                    const Text("No hay audio base cargado", style: TextStyle(color: Colors.white24, fontSize: 13, fontStyle: FontStyle.italic)),
-
-                  const SizedBox(height: 20),
-                  const Divider(color: Colors.white10),
-                  const SizedBox(height: 20),
-
-                  // Proyecto Editable
-                  const Text("ARCHIVO DE PROYECTO (.AUP3 / ZIP)", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                  const SizedBox(height: 8),
-                  if (tempProjectUrl != null)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.purple.withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.folder_zip, color: Colors.purple, size: 20),
-                          const SizedBox(width: 12),
-                          const Expanded(child: Text("Proyecto cargado", style: TextStyle(color: Colors.purple, fontSize: 13))),
-                          IconButton(
-                            icon: const Icon(Icons.download, color: Colors.white),
-                            onPressed: () => _orderService.openUrl(tempProjectUrl),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                            onPressed: () => setDialogState(() => tempProjectUrl = null),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  SizedBox(
-                    width: double.infinity,
-                    height: 45,
-                    child: OutlinedButton.icon(
-                      onPressed: (isUploadingProject || isUploadingFinal) ? null : () async {
-                        setDialogState(() => isUploadingProject = true);
-                        FilePickerResult? result = await FilePicker.platform.pickFiles(
-                          type: FileType.any, 
-                        );
-
-                        if (result != null) {
-                           try {
-                             final n8nUrl = await _n8nService.uploadFile(
-                               clientName: order.clientName,
-                               orderId: order.id.toString(),
-                               file: result.files.first,
-                               structuralReference: 'project_file_url', 
-                             );
-
-                             if (n8nUrl != null) {
-                               setDialogState(() {
-                                 tempProjectUrl = n8nUrl;
-                                 isUploadingProject = false;
-                               });
-                               // Guardar URL del proyecto inmediatamente
-                               await _orderService.updateOrder(order.copyWith(projectFileUrl: n8nUrl));
-                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Proyecto subido correctamente"), backgroundColor: Colors.green));
-                             } else {
-                               setDialogState(() => isUploadingProject = false);
-                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Proyecto enviado a n8n (sin enlace de retorno)"), backgroundColor: Colors.orange));
-                             }
-                           } catch (e) {
-                             setDialogState(() => isUploadingProject = false);
-                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
-                           }
-                        } else {
-                          setDialogState(() => isUploadingProject = false);
-                        }
-                      },
-                      icon: isUploadingProject 
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.upload_file),
-                      label: Text(tempProjectUrl == null ? "SUBIR PROYECTO EDITABLE" : "REEMPLAZAR PROYECTO"),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.purpleAccent,
-                        side: BorderSide(color: Colors.purpleAccent.withOpacity(0.5)),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
                     ),
                   ),
-                  
-                  const SizedBox(height: 24),
-                  const Divider(color: Colors.white10),
-                  const SizedBox(height: 20),
-
-                  // Subida de Audio Final
-                  const Text("AUDIO FINAL EDITADO", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                  const SizedBox(height: 12),
-                  
-                  if (tempFinalAudioUrl != null)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.music_video_rounded, color: Colors.blue, size: 20),
-                          const SizedBox(width: 12),
-                          const Expanded(child: Text("Edición cargada", style: TextStyle(color: Colors.blue, fontSize: 13))),
-                          IconButton(
-                            icon: const Icon(Icons.play_arrow, color: Colors.white),
-                            onPressed: () => _orderService.openUrl(tempFinalAudioUrl),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                            onPressed: () => setDialogState(() => tempFinalAudioUrl = null),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  SizedBox(
-                    width: double.infinity,
-                    height: 45,
-                    child: OutlinedButton.icon(
-                      onPressed: (isUploadingFinal || isUploadingProject) ? null : () async {
-                        setDialogState(() => isUploadingFinal = true);
-                        
-                        // Selección local del archivo
-                        FilePickerResult? result = await FilePicker.platform.pickFiles(
-                          type: FileType.custom,
-                          allowedExtensions: ['mp3', 'wav', 'm4a'],
-                        );
-
-                        if (result != null) {
-                           try {
-                             final n8nUrl = await _n8nService.uploadFile(
-                               clientName: order.clientName,
-                               orderId: order.id.toString(),
-                               file: result.files.first,
-                               structuralReference: 'final_audio_url', 
-                             );
-
-                             if (n8nUrl != null) {
-                               setDialogState(() {
-                                 tempFinalAudioUrl = n8nUrl;
-                                 isUploadingFinal = false;
-                               });
-                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Audio final subido a n8n correctamente"), backgroundColor: Colors.green));
-                             } else {
-                               setDialogState(() => isUploadingFinal = false);
-                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Audio enviado, pero n8n no devolvió el enlace."), backgroundColor: Colors.orange));
-                             }
-                           } catch (e) {
-                             setDialogState(() => isUploadingFinal = false);
-                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error al subir: $e"), backgroundColor: Colors.red));
-                           }
-                        } else {
-                          setDialogState(() => isUploadingFinal = false);
-                        }
-                      },
-                      icon: isUploadingFinal 
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.cloud_upload_outlined),
-                      label: Text(tempFinalAudioUrl == null ? "SUBIR PRODUCTO FINAL" : "REEMPLAZAR ARCHIVO"),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: BorderSide(color: Colors.white.withOpacity(0.2)),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-                  
-                  // Botón Listo
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: (tempFinalAudioUrl != null && !isProcessing) 
-                          ? () async {
-                              setDialogState(() => isProcessing = true);
-                              try {
-                                  await _orderService.completeEdition(order.id!, tempFinalAudioUrl!);
-                                  if (mounted) {
-                                    Navigator.pop(context);
-                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Enviado a Control de Calidad con éxito"), backgroundColor: Colors.blueAccent));
-                                  }
-                              } catch (e) {
-                                setDialogState(() => isProcessing = false);
-                              }
-                            } 
-                          : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF7C3AED),
-                        disabledBackgroundColor: Colors.white10,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      child: isProcessing 
-                          ? const CircularProgressIndicator(color: Colors.white) 
-                          : const Text("LISTO (ENVIAR A REVISIÓN)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                    ),
-                  )
-                ],
+                ),
               ),
             ),
-          ),
-        ),
-      ),
     );
   }
 

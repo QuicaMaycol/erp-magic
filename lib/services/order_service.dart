@@ -180,6 +180,22 @@ class OrderService {
         .eq('id', orderId);
   }
 
+  // Actualizar Audio Final (Rol Calidad / Reemplazo)
+  Future<void> updateAudioFinal(int orderId, String audioUrl) async {
+    await _supabase
+        .from('orders')
+        .update({'final_audio_url': audioUrl})
+        .eq('id', orderId);
+  }
+
+  // Actualizar Audio de Muestra
+  Future<void> updateAudioMuestra(int orderId, String audioUrl) async {
+    await _supabase
+        .from('orders')
+        .update({'audio_muestra_url': audioUrl})
+        .eq('id', orderId);
+  }
+
 
   // Método para subir archivos compatible con Web, Móvil y Escritorio
   Future<String?> pickAndUploadFile(String bucket) async {

@@ -62,7 +62,36 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         title: 'Inicio',
         icon: const Icon(Icons.home_outlined),
         selectedIcon: const Icon(Icons.home),
-        view: _InicioView(user: user),
+        view: _InicioView(
+          user: user,
+          onOrderTap: (order) {
+            final role = user.role;
+            if (role == UserRole.admin || role == UserRole.recepcion) {
+              final index = _cachedTabs?.indexWhere((t) => t.title == 'Recepción') ?? -1;
+              if (index != -1) {
+                setState(() => _selectedIndex = index);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _dashboardKey.currentState?.showOrderDetail(order, viewingUser: user);
+                });
+              }
+            } else if (role == UserRole.control_calidad) {
+              // Ver detalles menos precio (redirigimos a recepción que ya tiene la lógica)
+              final index = _cachedTabs?.indexWhere((t) => t.title == 'Recepción') ?? -1;
+              if (index != -1) {
+                setState(() => _selectedIndex = index);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _dashboardKey.currentState?.showOrderDetail(order, viewingUser: user);
+                });
+              }
+            } else if (role == UserRole.generador) {
+              final index = _cachedTabs?.indexWhere((t) => t.title == 'Generar') ?? -1;
+              if (index != -1) setState(() => _selectedIndex = index);
+            } else if (role == UserRole.editor) {
+              final index = _cachedTabs?.indexWhere((t) => t.title == 'Editar') ?? -1;
+              if (index != -1) setState(() => _selectedIndex = index);
+            }
+          },
+        ),
         roles: [UserRole.admin, UserRole.control_calidad, UserRole.recepcion, UserRole.generador, UserRole.editor],
       ),
       _TabItem(
@@ -208,6 +237,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 20.0),
                 child: Column(
                   children: [
+                    Image.asset('img/logo.png', height: 40),
+                    const SizedBox(height: 20),
                     buildProfileAvatar(radius: 32, fontSize: 24),
                     const SizedBox(height: 12),
                     SizedBox(
@@ -335,7 +366,8 @@ enum InicioViewMode { list, planner }
 
 class _InicioView extends StatefulWidget {
   final UserModel user;
-  const _InicioView({required this.user});
+  final Function(OrderModel) onOrderTap;
+  const _InicioView({required this.user, required this.onOrderTap});
 
   @override
   State<_InicioView> createState() => _InicioViewState();
@@ -348,6 +380,7 @@ class _InicioViewState extends State<_InicioView> {
   String _searchQuery = "";
   InicioViewMode _viewMode = InicioViewMode.planner;
   String _activeFilter = 'TODOS'; // Filtro por métrica (TODOS, URGENTES, LISTOS, ENTREGADOS)
+  int _weekOffset = 0; // Desplazamiento por semanas (0 = actual, -1 = pasada, +1 = siguiente)
 
   final List<String> _days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -479,7 +512,45 @@ class _InicioViewState extends State<_InicioView> {
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                      child: _buildWeeklyPlanner(allOrders),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Builder(
+                                builder: (context) {
+                                  final now = DateTime.now();
+                                  final monday = now.subtract(Duration(days: now.weekday - 1)).add(Duration(days: _weekOffset * 7));
+                                  final sunday = monday.add(const Duration(days: 6));
+                                  return Text(
+                                    '${DateFormat('dd MMM', 'es').format(monday)} - ${DateFormat('dd MMM', 'es').format(sunday)}'.toUpperCase(),
+                                    style: const TextStyle(color: Colors.white24, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1),
+                                  );
+                                }
+                              ),
+                              Row(
+                                children: [
+                                  if (_weekOffset != 0)
+                                    TextButton(
+                                      onPressed: () => setState(() => _weekOffset = 0),
+                                      child: const Text('HOY', style: TextStyle(color: Color(0xFF7C3AED), fontSize: 10, fontWeight: FontWeight.bold)),
+                                    ),
+                                  IconButton(
+                                    icon: const Icon(Icons.chevron_left, color: Colors.white38),
+                                    onPressed: () => setState(() => _weekOffset--),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.chevron_right, color: Colors.white38),
+                                    onPressed: () => setState(() => _weekOffset++),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          _buildWeeklyPlanner(allOrders),
+                        ],
+                      ),
                     ),
                   )
                 else ...[
@@ -680,9 +751,7 @@ class _InicioViewState extends State<_InicioView> {
         border: Border.all(color: Colors.white.withOpacity(0.05)),
       ),
       child: InkWell(
-        onTap: () {
-          // Navegar a detalle (usando la función que ya existe en MainNavigation si es posible o una nueva)
-        },
+        onTap: () => widget.onOrderTap(order),
         borderRadius: BorderRadius.circular(20),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -766,9 +835,9 @@ class _InicioViewState extends State<_InicioView> {
   }
 
   Widget _buildWeeklyPlanner(List<OrderModel> allOrders) {
-    // Calculamos el inicio de la semana (Lunes)
+    // Calculamos el inicio de la semana (Lunes) según el offset
     final now = DateTime.now();
-    final monday = now.subtract(Duration(days: now.weekday - 1));
+    final monday = now.subtract(Duration(days: now.weekday - 1)).add(Duration(days: _weekOffset * 7));
     
     return Container(
       height: 350,
