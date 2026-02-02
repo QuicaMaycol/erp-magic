@@ -44,6 +44,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         if (user == null) {
           setState(() => _cachedTabs = []); // Bandera para indicar que terminó pero no hay perfil
         } else {
+          setState(() {
             _currentUser = user;
             _initTabs(user);
             // Inicializar notificaciones para el token FCM
