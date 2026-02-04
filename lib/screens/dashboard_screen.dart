@@ -654,7 +654,10 @@ class DashboardScreenState extends State<DashboardScreen> {
                     if (selectedFile != null) {
                       // Regla simple: si es mp3 -> base_audio, si no -> script_file
                       String ref = 'script_file_url';
-                      if (selectedFile!.extension == 'mp3' || selectedFile!.extension == 'wav') {
+                      final extension = selectedFile!.extension?.toLowerCase() ?? 
+                                     selectedFile!.name.split('.').last.toLowerCase();
+                      
+                      if (extension == 'mp3' || extension == 'wav' || extension == 'zip') {
                         ref = 'base_audio_url';
                       }
 

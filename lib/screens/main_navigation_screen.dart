@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:ui';
 import 'package:intl/intl.dart';
 import 'dashboard_screen.dart';
@@ -42,25 +43,27 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       
       if (mounted) {
         if (user == null) {
-          setState(() => _cachedTabs = []); // Bandera para indicar que terminó pero no hay perfil
+          setState(() => _cachedTabs = []); 
         } else {
+          _initTabs(user);
           setState(() {
             _currentUser = user;
-            _initTabs(user);
-            // Inicializar notificaciones para el token FCM
-            NotificationService().initialize();
+            // Solo inicializar notificaciones en móviles (Firebase Web requiere setup adicional)
+            if (!kIsWeb) {
+              NotificationService().initialize();
+            }
           });
         }
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _cachedTabs = []); // Bandera de error/fin
+        setState(() => _cachedTabs = []); 
       }
     }
   }
 
   void _initTabs(UserModel user) {
-    _cachedTabs = [
+    final allTabs = [
       _TabItem(
         title: 'Inicio',
         icon: const Icon(Icons.home_outlined),
@@ -78,7 +81,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 });
               }
             } else if (role == UserRole.control_calidad) {
-              // Ver detalles menos precio (redirigimos a recepción que ya tiene la lógica)
               final index = _cachedTabs?.indexWhere((t) => t.title == 'Recepción') ?? -1;
               if (index != -1) {
                 setState(() => _selectedIndex = index);
@@ -125,34 +127,36 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         view: EditorView(currentUser: user),
         roles: [UserRole.admin, UserRole.control_calidad, UserRole.editor],
       ),
-    ].where((tab) {
-      final userRoleName = user.role.name.toLowerCase();
-      return tab.roles.any((r) => r.name.toLowerCase() == userRoleName);
+    ];
+
+    _cachedTabs = allTabs.where((tab) {
+      return tab.roles.any((r) => r.name == user.role.name);
     }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_currentUser == null || _cachedTabs == null) {
-      // Si el caché está vacío pero no es null, significa que falló la carga del perfil
+    if (_currentUser == null || _cachedTabs == null || _cachedTabs!.isEmpty) {
+      // Si el caché está vacío but not null or user is loaded, it means no tabs matched the role
       if (_cachedTabs != null && _cachedTabs!.isEmpty) {
         return Scaffold(
+          backgroundColor: const Color(0xFF121216),
           body: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.error_outline, color: Colors.redAccent, size: 60),
+                const Icon(Icons.lock_person_outlined, color: Colors.orangeAccent, size: 60),
                 const SizedBox(height: 16),
-                const Text('No se pudo cargar tu perfil de usuario', 
+                const Text('Sin acceso al sistema', 
                   style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                const Text('Verifica tu conexión o reintenta ingresar.', 
-                  style: TextStyle(color: Colors.white38)),
+                Text('Tu rol (${_currentUser?.role.name}) no tiene permisos asignados.', 
+                  style: const TextStyle(color: Colors.white38)),
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
                   onPressed: () => _authService.signOut(),
                   icon: const Icon(Icons.logout),
-                  label: const Text('CERRAR SESIÓN Y REINTENTAR'),
+                  label: const Text('CERRAR SESIÓN'),
                   style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7C3AED)),
                 ),
               ],
@@ -160,7 +164,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ),
         );
       }
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        backgroundColor: const Color(0xFF121216),
+        body: Center(child: CircularProgressIndicator(color: Color(0xFF7C3AED))),
+      );
     }
 
     final userTabs = _cachedTabs!;

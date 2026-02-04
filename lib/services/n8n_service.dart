@@ -33,8 +33,10 @@ class N8nService {
     }
 
     // 2. Preparar el nombre de archivo limpio
+    final fileName = file.name;
+    final ext = file.extension?.toLowerCase() ?? 
+                (fileName.contains('.') ? fileName.split('.').last.toLowerCase() : 'dat');
     final safeClientName = clientName.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
-    final ext = file.extension?.toLowerCase() ?? 'dat';
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final newFileName = '${safeClientName}_${fileType}_$timestamp.$ext';
 
@@ -53,7 +55,16 @@ class N8nService {
 
     try {
       // 4. Crear la petición Multipart
-      var request = http.MultipartRequest('POST', Uri.parse(_webhookUrl));
+      // Agregamos metadatos a la URL para que n8n los detecte siempre (evita problemas con Binary File)
+      final uri = Uri.parse(_webhookUrl).replace(queryParameters: {
+        'order_id': orderId,
+        'file_type': fileType,
+        'client_name': clientName,
+        'desired_filename': newFileName,
+        'column': structuralReference, // Enviamos el nombre real de la columna
+      });
+      
+      var request = http.MultipartRequest('POST', uri);
       
       // Campos de texto obligatorios
       request.fields['order_id'] = orderId;
@@ -157,16 +168,20 @@ class N8nService {
 
           final extractedUrl = findUrl(jsonResponse, structuralReference);
           
-          if (extractedUrl != null && extractedUrl.isNotEmpty) {
-            String finalUrl = extractedUrl;
+          // Meora: Si no se encontró el específico, buscar cualquier cosa que parezca un ID de Drive o URL
+          final fallbackUrl = extractedUrl ?? findUrl(jsonResponse, 'id') ?? findUrl(jsonResponse, 'project_file_url');
+
+          if (fallbackUrl != null && fallbackUrl.isNotEmpty) {
+            String finalUrl = fallbackUrl;
             if (!finalUrl.startsWith('http')) {
-              // Cambiado a /view para permitir previsualización nativa
+              // Si es un ID corto (Drive), construir URL full
               finalUrl = 'https://drive.google.com/file/d/$finalUrl/view';
             }
+            print("✅ URL final extraída: $finalUrl");
             return finalUrl;
           }
           
-          print("⚠️ No se encontró la clave '$structuralReference' ni ninguna URL válida en el JSON.");
+          print("⚠️ No se encontró la clave '$structuralReference' ni fallbacks en el JSON.");
         } catch (e) {
           print("⚠️ Error procesando JSON de n8n: $e");
         }
