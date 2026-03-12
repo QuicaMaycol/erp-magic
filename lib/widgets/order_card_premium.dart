@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/order_model.dart';
+import '../services/upload_service.dart';
 
 class OrderCardPremium extends StatelessWidget {
   final OrderModel order;
@@ -33,6 +34,7 @@ class OrderCardPremium extends StatelessWidget {
     final timeFormat = DateFormat('h:mm', 'es');
     final periodFormat = DateFormat('a', 'es');
     final dateFormat = DateFormat('d/M', 'es');
+    final dayNameFormat = DateFormat('EEEE', 'es'); // Ejemplo: lunes, martes...
     final fullTimeFormat = DateFormat('hh:mm a', 'es');
 
     return InkWell(
@@ -166,13 +168,20 @@ class OrderCardPremium extends StatelessWidget {
                         children: [
                           const Text('ENTREGA', style: TextStyle(color: Colors.white24, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1)),
                           const SizedBox(height: 4),
-                          Text(dateFormat.format(order.deliveryDueAt), 
-                            style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 14)),
+                          Text(dayNameFormat.format(order.deliveryDueAt).toUpperCase(), 
+                            style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 13)),
                           const Spacer(),
-                          Text(timeFormat.format(order.deliveryDueAt), 
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: isWebGrid ? 22 : 28, height: 1)),
-                          Text(periodFormat.format(order.deliveryDueAt).toUpperCase(), 
-                            style: const TextStyle(color: Color(0xFF7C3AED), fontWeight: FontWeight.w900, fontSize: 14)),
+                          if (order.deliveryDueAt.hour == 23 && order.deliveryDueAt.minute == 59) ...[
+                             const Text("TODO", 
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22, height: 1)),
+                             const Text("EL DÍA", 
+                              style: TextStyle(color: Color(0xFF7C3AED), fontWeight: FontWeight.w900, fontSize: 14)),
+                          ] else ...[
+                            Text(timeFormat.format(order.deliveryDueAt), 
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: isWebGrid ? 22 : 28, height: 1)),
+                            Text(periodFormat.format(order.deliveryDueAt).toUpperCase(), 
+                              style: const TextStyle(color: Color(0xFF7C3AED), fontWeight: FontWeight.w900, fontSize: 14)),
+                          ],
                         ],
                       ),
                     ),
@@ -180,6 +189,42 @@ class OrderCardPremium extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+          
+          // Indicador de Progreso de Subida
+          ListenableBuilder(
+            listenable: UploadService(),
+            builder: (context, _) {
+              final task = UploadService().tasks.cast<UploadTask?>().firstWhere(
+                (t) => t?.orderId == order.id.toString(),
+                orElse: () => null,
+              );
+              
+              if (task == null) return const SizedBox.shrink();
+              
+              return Positioned(
+                bottom: isWebGrid ? 0 : 20,
+                left: 0,
+                right: 0,
+                child: Container(
+                  height: 4,
+                  decoration: BoxDecoration(
+                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
+                    color: Colors.black.withOpacity(0.5),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
+                    child: LinearProgressIndicator(
+                      value: task.progress,
+                      backgroundColor: Colors.transparent,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        task.status == UploadStatus.error ? Colors.redAccent : const Color(0xFF7C3AED)
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
           
           // Botón de 3 puntos para Web (Esquina Superior Derecha)

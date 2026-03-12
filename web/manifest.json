@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#1B1B21",
     "theme_color": "#7C3AED",
-    "description": "A new Flutter project.",
+    "description": "Sistema de gestión de pedidos para Magic Voice Studio.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

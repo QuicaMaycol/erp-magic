@@ -8,6 +8,7 @@ import '../models/user_model.dart';
 import '../services/order_service.dart';
 import '../services/auth_service.dart';
 import '../services/n8n_service.dart';
+import '../services/upload_service.dart';
 import 'qc_order_card.dart'; // Nueva tarjeta especializada
 
 class PremiumQCPanel extends StatefulWidget {
@@ -111,27 +112,36 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
     String? tempEdId = order.editorId;
     String? tempFinalAudioUrl = order.finalAudioUrl;
     String? tempAudioMuestraUrl = order.audioMuestraUrl;
-    bool isProcessing = false;
+    String? tempProjectUrl = order.projectFileUrl;
+    final TextEditingController observationController = TextEditingController();
+    bool isProcessing = false; 
     bool isUploadingFinal = false;
     bool isUploadingMuestra = false;
+    bool isUploadingProject = false;
     bool isDraggingFinal = false;
     bool isDraggingMuestra = false;
+    bool isDraggingProject = false;
 
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF1B1B21),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text('Gestionar Pedido #${order.id}', 
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          content: SizedBox(
-            width: 500,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1B1B21),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Text('Gestionar Pedido #${order.id}', 
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              content: ListenableBuilder(
+                listenable: UploadService(),
+                builder: (context, _) {
+                  return SizedBox(
+                    width: 500,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                   // Info del Cliente y Pedido
                   _buildDetailRow("CLIENTE", order.clientName),
                   const SizedBox(height: 12),
@@ -270,119 +280,122 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              IconButton(
-                                onPressed: () async {
-                                  final confirmed = await _showConfirmDelete(context, "audio final");
-                                  if (confirmed == true) {
-                                    setDialogState(() => tempFinalAudioUrl = null);
+                              if (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.recepcion || _currentUser?.role == UserRole.control_calidad)
+                                IconButton(
+                                  onPressed: () async {
+                                    final confirmed = await _showConfirmDelete(context, "audio final");
+                                    if (confirmed == true) {
+                                      setDialogState(() => tempFinalAudioUrl = null);
+                                      try {
+                                        await _orderService.updateAudioFinal(order.id!, null);
+                                      } catch (e) {
+                                        print("Error eliminando audio final: $e");
+                                      }
+                                    }
+                                  },
+                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                  tooltip: "Eliminar Audio Final",
+                                ),
+                            ],
+                          ),
+                           const SizedBox(height: 8),
+                          // Botón para REEMPLAZAR (Siempre visible si hay uno cargado)
+                          if (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.recepcion || _currentUser?.role == UserRole.control_calidad)
+                            SizedBox(
+                              width: double.infinity,
+                              child: DropTarget(
+                                onDragDone: (details) async {
+                                  final isQueued = UploadService().isUploading(order.id.toString(), 'final_audio_url');
+                                  if (details.files.isNotEmpty && !isUploadingFinal && !isQueued) {
+                                    final file = details.files.first;
+                                    setDialogState(() {
+                                      isDraggingFinal = false;
+                                      isUploadingFinal = true;
+                                    });
                                     try {
-                                      await _orderService.updateAudioFinal(order.id!, null);
+                                      final bytes = await file.readAsBytes();
+                                      final platformFile = PlatformFile(name: file.name, size: bytes.length, bytes: bytes);
+                                      
+                                      UploadService().startUpload(
+                                        clientName: order.clientName,
+                                        orderId: order.id.toString(),
+                                        file: platformFile,
+                                        structuralReference: 'final_audio_url', 
+                                      );
+
+                                      if (context.mounted) {
+                                        Navigator.pop(context); // Cerrar modal inmediatamente
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text("🚀 Subida de audio final iniciada en segundo plano. Se te avisará al terminar."), 
+                                            backgroundColor: Color(0xFF7C3AED),
+                                            duration: Duration(seconds: 4),
+                                          )
+                                        );
+                                      }
                                     } catch (e) {
-                                      print("Error eliminando audio final: $e");
+                                      print("Error drop final replacement: $e");
+                                    } finally {
+                                      setDialogState(() => isUploadingFinal = false);
                                     }
                                   }
                                 },
-                                icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                                tooltip: "Eliminar Audio Final",
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          // Botón para REEMPLAZAR (Siempre visible si hay uno cargado)
-                          SizedBox(
-                            width: double.infinity,
-                            child: DropTarget(
-                              onDragDone: (details) async {
-                                if (details.files.isNotEmpty && !isUploadingFinal) {
-                                  final file = details.files.first;
-                                  setDialogState(() {
-                                    isDraggingFinal = false;
-                                    isUploadingFinal = true;
-                                  });
-                                  try {
-                                    final bytes = await file.readAsBytes();
-                                    final platformFile = PlatformFile(name: file.name, size: bytes.length, bytes: bytes);
-                                    
-                                    final n8nUrl = await _n8nService.uploadFile(
-                                      clientName: order.clientName,
-                                      orderId: order.id.toString(),
-                                      file: platformFile,
-                                      structuralReference: 'final_audio_url', 
+                                onDragEntered: (details) => setDialogState(() => isDraggingFinal = true),
+                                onDragExited: (details) => setDialogState(() => isDraggingFinal = false),
+                                child: OutlinedButton.icon(
+                                  onPressed: (isUploadingFinal || UploadService().isUploading(order.id.toString(), 'final_audio_url')) ? null : () async {
+                                    FilePickerResult? result = await FilePicker.platform.pickFiles(
+                                      type: FileType.custom,
+                                      allowedExtensions: ['mp3', 'wav', 'm4a', 'zip'],
+                                      withData: true, // Requerido para Web
                                     );
 
-                                    if (n8nUrl != null) {
-                                      await _orderService.updateAudioFinal(order.id!, n8nUrl);
-                                      setDialogState(() {
-                                        tempFinalAudioUrl = n8nUrl;
-                                      });
-                                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Audio final reemplazado"), backgroundColor: Colors.green));
-                                    }
-                                  } catch (e) {
-                                    print("Error drop final replacement: $e");
-                                  } finally {
-                                    setDialogState(() => isUploadingFinal = false);
-                                  }
-                                }
-                              },
-                              onDragEntered: (details) => setDialogState(() => isDraggingFinal = true),
-                              onDragExited: (details) => setDialogState(() => isDraggingFinal = false),
-                              child: OutlinedButton.icon(
-                                onPressed: isUploadingFinal ? null : () async {
-                                  FilePickerResult? result = await FilePicker.platform.pickFiles(
-                                    type: FileType.custom,
-                                    allowedExtensions: ['mp3', 'wav', 'm4a', 'zip'],
-                                  );
-
-                                  if (result != null) {
-                                    setDialogState(() => isUploadingFinal = true);
-                                    final file = result.files.first;
-                                    try {
-                                      final n8nUrl = await _n8nService.uploadFile(
+                                    if (result != null) {
+                                      setDialogState(() => isUploadingFinal = true);
+                                      final file = result.files.first;
+                                      UploadService().startUpload(
                                         clientName: order.clientName,
                                         orderId: order.id.toString(),
                                         file: file,
                                         structuralReference: 'final_audio_url', 
                                       );
 
-                                      if (n8nUrl != null) {
-                                        await _orderService.updateAudioFinal(order.id!, n8nUrl);
-                                        setDialogState(() {
-                                          tempFinalAudioUrl = n8nUrl;
-                                        });
-                                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Audio final reemplazado"), backgroundColor: Colors.green));
+                                      if (context.mounted) {
+                                        Navigator.pop(context); // Cerrar modal inmediatamente
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text("🚀 Subida de audio final iniciada en segundo plano. Se te avisará al terminar."), 
+                                            backgroundColor: Color(0xFF7C3AED),
+                                            duration: Duration(seconds: 4),
+                                          )
+                                        );
                                       }
-                                    } catch (e) {
-                                      print("Error pick final replacement: $e");
-                                    } finally {
                                       setDialogState(() => isUploadingFinal = false);
                                     }
-                                  }
-                                },
-                                icon: isUploadingFinal 
-                                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blueAccent))
-                                  : const Icon(Icons.cloud_upload_outlined, size: 16),
-                                label: Text(
-                                  isDraggingFinal ? "¡SUELTA AQUÍ!" : (isUploadingFinal ? "Subiendo..." : "Reemplazar Audio Final"), 
-                                  style: const TextStyle(fontSize: 12)
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  backgroundColor: isDraggingFinal ? Colors.blueAccent.withOpacity(0.1) : Colors.transparent,
-                                  foregroundColor: Colors.blueAccent.withOpacity(0.7),
-                                  side: BorderSide(color: isDraggingFinal ? Colors.blueAccent : Colors.blueAccent.withOpacity(0.3)),
-                                  minimumSize: const Size(double.infinity, 40),
+                                  },
+                                  icon: const Icon(Icons.cloud_upload_outlined, size: 16),
+                                  label: Text(
+                                    isDraggingFinal ? "¡SUELTA AQUÍ!" : ((isUploadingFinal || UploadService().isUploading(order.id.toString(), 'final_audio_url')) ? "Subiendo..." : "SUBIR AUDIO FINAL"), 
+                                    style: const TextStyle(fontSize: 12)
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    backgroundColor: isDraggingFinal ? Colors.blueAccent.withOpacity(0.1) : Colors.transparent,
+                                    foregroundColor: Colors.blueAccent,
+                                    side: BorderSide(color: isDraggingFinal ? Colors.blueAccent : Colors.blueAccent.withOpacity(0.3)),
+                                    minimumSize: const Size(double.infinity, 40),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
                         ],
                       )
-                    else
-                      // Si NO hay audio final, mostrar zona de carga
+                    else if (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.recepcion || _currentUser?.role == UserRole.control_calidad)
                       SizedBox(
                         width: double.infinity,
                         child: DropTarget(
                           onDragDone: (details) async {
-                            if (details.files.isNotEmpty && !isUploadingFinal) {
+                            final isQueued = UploadService().isUploading(order.id.toString(), 'final_audio_url');
+                            if (details.files.isNotEmpty && !isUploadingFinal && !isQueued) {
                               final file = details.files.first;
                               setDialogState(() {
                                 isDraggingFinal = false;
@@ -392,19 +405,22 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
                                 final bytes = await file.readAsBytes();
                                 final platformFile = PlatformFile(name: file.name, size: bytes.length, bytes: bytes);
                                 
-                                final n8nUrl = await _n8nService.uploadFile(
+                                UploadService().startUpload(
                                   clientName: order.clientName,
                                   orderId: order.id.toString(),
                                   file: platformFile,
                                   structuralReference: 'final_audio_url', 
                                 );
 
-                                if (n8nUrl != null) {
-                                  await _orderService.updateAudioFinal(order.id!, n8nUrl);
-                                  setDialogState(() {
-                                    tempFinalAudioUrl = n8nUrl;
-                                  });
-                                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Audio final cargado"), backgroundColor: Colors.green));
+                                if (context.mounted) {
+                                  Navigator.pop(context); // Cerrar modal inmediatamente
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text("🚀 Subida de audio final iniciada en segundo plano. Se te avisará al terminar."), 
+                                      backgroundColor: Color(0xFF7C3AED),
+                                      duration: Duration(seconds: 4),
+                                    )
+                                  );
                                 }
                               } catch (e) {
                                 print("Error drop final upload: $e");
@@ -416,42 +432,39 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
                           onDragEntered: (details) => setDialogState(() => isDraggingFinal = true),
                           onDragExited: (details) => setDialogState(() => isDraggingFinal = false),
                           child: OutlinedButton.icon(
-                            onPressed: isUploadingFinal ? null : () async {
+                            onPressed: (isUploadingFinal || UploadService().isUploading(order.id.toString(), 'final_audio_url')) ? null : () async {
                               FilePickerResult? result = await FilePicker.platform.pickFiles(
                                 type: FileType.custom,
                                 allowedExtensions: ['mp3', 'wav', 'm4a', 'zip'],
+                                withData: true, // Requerido para Web
                               );
 
                               if (result != null) {
                                 setDialogState(() => isUploadingFinal = true);
                                 final file = result.files.first;
-                                try {
-                                  final n8nUrl = await _n8nService.uploadFile(
-                                    clientName: order.clientName,
-                                    orderId: order.id.toString(),
-                                    file: file,
-                                    structuralReference: 'final_audio_url', 
-                                  );
+                                UploadService().startUpload(
+                                  clientName: order.clientName,
+                                  orderId: order.id.toString(),
+                                  file: file,
+                                  structuralReference: 'final_audio_url', 
+                                );
 
-                                  if (n8nUrl != null) {
-                                    await _orderService.updateAudioFinal(order.id!, n8nUrl);
-                                    setDialogState(() {
-                                      tempFinalAudioUrl = n8nUrl;
-                                    });
-                                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Audio final subido"), backgroundColor: Colors.green));
-                                  }
-                                } catch (e) {
-                                  print("Error pick final upload: $e");
-                                } finally {
-                                  setDialogState(() => isUploadingFinal = false);
+                                if (context.mounted) {
+                                  Navigator.pop(context); // Cerrar modal inmediatamente
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text("🚀 Subida de audio final iniciada en segundo plano. Se te avisará al terminar."), 
+                                      backgroundColor: Color(0xFF7C3AED),
+                                      duration: Duration(seconds: 4),
+                                    )
+                                  );
                                 }
+                                setDialogState(() => isUploadingFinal = false);
                               }
                             },
-                            icon: isUploadingFinal 
-                              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blueAccent))
-                              : const Icon(Icons.cloud_upload_outlined, size: 16),
+                            icon: const Icon(Icons.cloud_upload_outlined, size: 16),
                             label: Text(
-                              isDraggingFinal ? "¡SUELTA AQUÍ!" : (isUploadingFinal ? "Subiendo..." : "Subir Audio Final"), 
+                              isDraggingFinal ? "¡SUELTA AQUÍ!" : ((isUploadingFinal || UploadService().isUploading(order.id.toString(), 'final_audio_url')) ? "Subiendo..." : "SUBIR AUDIO FINAL"), 
                               style: const TextStyle(fontSize: 12)
                             ),
                             style: OutlinedButton.styleFrom(
@@ -464,344 +477,550 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
                         ),
                       ),
 
-                    const SizedBox(height: 16),
+                        const SizedBox(height: 16),
 
-                    // 3. Audio de Muestra (NUEVO)
-                    const Text("AUDIO DE MUESTRA (PARA CLIENTE)", style: TextStyle(color: Colors.tealAccent, fontSize: 10, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    if (tempAudioMuestraUrl != null)
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () => _orderService.openUrl(tempAudioMuestraUrl),
-                              icon: const Icon(Icons.play_circle_fill),
-                              label: const Text("Escuchar"),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.teal.withOpacity(0.1), 
-                                foregroundColor: Colors.tealAccent,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        // 3. Audio de Muestra (NUEVO)
+                        const Text("AUDIO DE MUESTRA (PARA CLIENTE)", style: TextStyle(color: Colors.tealAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        if (tempAudioMuestraUrl != null)
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _orderService.openUrl(tempAudioMuestraUrl),
+                                  icon: const Icon(Icons.play_circle_fill),
+                                  label: const Text("Escuchar"),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.teal.withOpacity(0.1), 
+                                    foregroundColor: Colors.tealAccent,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => _showDownloadOptions(tempAudioMuestraUrl, "Audio de Muestra"),
-                              icon: const Icon(Icons.download_rounded),
-                              label: const Text("Descargar"),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.tealAccent, 
-                                side: BorderSide(color: Colors.tealAccent.withOpacity(0.5)),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _showDownloadOptions(tempAudioMuestraUrl, "Audio de Muestra"),
+                                  icon: const Icon(Icons.download_rounded),
+                                  label: const Text("Descargar"),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.tealAccent, 
+                                    side: BorderSide(color: Colors.tealAccent.withOpacity(0.5)),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          if (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.recepcion)
-                            IconButton(
-                              onPressed: () async {
-                                final confirmed = await _showConfirmDelete(context, "audio de muestra");
-                                if (confirmed == true) {
-                                  setDialogState(() => tempAudioMuestraUrl = null);
-                                  try {
-                                    await _orderService.updateAudioMuestra(order.id!, null);
-                                  } catch (e) {
-                                    print("Error eliminando muestra: $e");
-                                  }
-                                }
-                              },
-                              icon: const Icon(Icons.delete, color: Colors.redAccent, size: 20),
-                              tooltip: "Eliminar Muestra",
-                            ),
-                        ],
-                      )
-                    else if (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.recepcion)
-                      Column(
-                        children: [
-                          DropTarget(
-                            onDragDone: (details) async {
-                              if (details.files.isNotEmpty && !isUploadingMuestra) {
-                                final file = details.files.first;
-                                setDialogState(() {
-                                  isDraggingMuestra = false;
-                                  isUploadingMuestra = true;
-                                });
-                                try {
-                                  final bytes = await file.readAsBytes();
-                                  final platformFile = PlatformFile(name: file.name, size: bytes.length, bytes: bytes);
-
-                                  final n8nUrl = await _n8nService.uploadFile(
-                                    clientName: order.clientName,
-                                    orderId: order.id.toString(),
-                                    file: platformFile,
-                                    structuralReference: 'audio_muestra_url', 
-                                  );
-
-                                  if (n8nUrl != null) {
-                                    await _orderService.updateAudioMuestra(order.id!, n8nUrl);
-                                    setDialogState(() {
-                                      tempAudioMuestraUrl = n8nUrl;
-                                    });
-                                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Muestra cargada"), backgroundColor: Colors.green));
-                                  }
-                                } catch (e) {
-                                  print("Error drop muestra: $e");
-                                } finally {
-                                  setDialogState(() => isUploadingMuestra = false);
-                                }
-                              }
-                            },
-                            onDragEntered: (details) => setDialogState(() => isDraggingMuestra = true),
-                            onDragExited: (details) => setDialogState(() => isDraggingMuestra = false),
-                            child: OutlinedButton.icon(
-                              onPressed: isUploadingMuestra ? null : () async {
-                                FilePickerResult? result = await FilePicker.platform.pickFiles(
-                                  type: FileType.custom,
-                                  allowedExtensions: ['mp3', 'wav', 'm4a', 'zip'],
-                                );
-
-                                if (result != null) {
-                                  setDialogState(() => isUploadingMuestra = true);
-                                  final file = result.files.first;
-                                  try {
-                                    final n8nUrl = await _n8nService.uploadFile(
-                                      clientName: order.clientName,
-                                      orderId: order.id.toString(),
-                                      file: file,
-                                      structuralReference: 'audio_muestra_url', 
-                                    );
-
-                                    if (n8nUrl != null) {
-                                      await _orderService.updateAudioMuestra(order.id!, n8nUrl);
-                                      setDialogState(() {
-                                        tempAudioMuestraUrl = n8nUrl;
-                                      });
-                                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Muestra subida"), backgroundColor: Colors.green));
-                                    }
-                                  } catch (e) {
-                                    print("Error pick muestra: $e");
-                                  } finally {
-                                    setDialogState(() => isUploadingMuestra = false);
-                                  }
-                                }
-                              },
-                              icon: isUploadingMuestra 
-                                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.tealAccent))
-                                : const Icon(Icons.cloud_upload_outlined, size: 16),
-                              label: Text(
-                                isDraggingMuestra ? "¡SUELTA AQUÍ!" : (isUploadingMuestra ? "Subiendo..." : "Subir Audio de Muestra"), 
-                                style: const TextStyle(fontSize: 12)
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                backgroundColor: isDraggingMuestra ? Colors.tealAccent.withOpacity(0.1) : Colors.transparent,
-                                foregroundColor: Colors.tealAccent,
-                                side: BorderSide(color: isDraggingMuestra ? Colors.tealAccent : Colors.tealAccent.withOpacity(0.3)),
-                                minimumSize: const Size(double.infinity, 40),
-                              ),
-                            ),
-                          ),
-                          if (isDraggingMuestra || isDraggingFinal)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8.0),
-                              child: Text(
-                                "Detectado archivo para ${isDraggingMuestra ? 'MUESTRA' : 'AUDIO FINAL'}", 
-                                style: TextStyle(color: isDraggingMuestra ? Colors.tealAccent : Colors.blueAccent, fontSize: 10, fontWeight: FontWeight.bold)
-                              ),
-                            ),
-                        ],
-                      )
-                    else
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.02), borderRadius: BorderRadius.circular(8)),
-                        child: const Text("Aún no se ha cargado el audio de muestra", style: TextStyle(color: Colors.white24, fontSize: 11, fontStyle: FontStyle.italic)),
-                      ),
-                    
-                    const SizedBox(height: 16),
-
-                    // 4. Proyecto Editable
-                    const Text("PROYECTO EDITABLE (.AUP3 / ZIP)", style: TextStyle(color: Colors.purpleAccent, fontSize: 10, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    if (order.projectFileUrl != null)
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () => _orderService.openUrl(order.projectFileUrl),
-                              icon: const Icon(Icons.folder_zip, color: Colors.purpleAccent),
-                              label: const Text("Ver Proyecto"),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.purple.withOpacity(0.1), 
-                                foregroundColor: Colors.purpleAccent,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => _showDownloadOptions(order.projectFileUrl, "Archivo de Proyecto"),
-                              icon: const Icon(Icons.download_rounded),
-                              label: const Text("Descargar"),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.purpleAccent, 
-                                side: BorderSide(color: Colors.purpleAccent.withOpacity(0.5)),
-                              ),
-                            ),
-                          ),
-                          if (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.recepcion)
-                            IconButton(
-                              onPressed: () async {
-                                final confirmed = await _showConfirmDelete(context, "proyecto editable");
-                                if (confirmed == true) {
-                                  try {
-                                    await _orderService.updateOrder(order.copyWith(clearProjectFile: true));
-                                    if (mounted) Navigator.pop(context);
-                                  } catch (e) {
-                                    print("Error eliminando proyecto: $e");
-                                  }
-                                }
-                              },
-                              icon: const Icon(Icons.delete, color: Colors.redAccent, size: 20),
-                              tooltip: "Eliminar Proyecto",
-                            ),
-                        ],
-                      )
-                    else
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.02), borderRadius: BorderRadius.circular(8)),
-                        child: const Text("Sin proyecto editable", style: TextStyle(color: Colors.white24, fontSize: 11, fontStyle: FontStyle.italic)),
-                      ),
-
-                    const SizedBox(height: 16),
-                    const Divider(color: Colors.white10),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // Asignación
-                  const Text("ASIGNACIÓN DE PERSONAL", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                  const SizedBox(height: 12),
-                  
-                  // Dropdown Generador
-                  _buildDropdown("Generador", _generators, tempGenId, (val) => setDialogState(() => tempGenId = val), 
-                    enabled: (order.status == OrderStatus.PENDIENTE || order.status == OrderStatus.EN_GENERACION)),
-                  const SizedBox(height: 12),
-                  // Dropdown Editor
-                  _buildDropdown("Editor", _editors, tempEdId, (val) => setDialogState(() => tempEdId = val),
-                    enabled: (order.status == OrderStatus.PENDIENTE || order.status == OrderStatus.EN_GENERACION)),
-
-                  const SizedBox(height: 20),
-
-                  
-                   SizedBox(
-                    width: double.infinity,
-                    child: (order.status == OrderStatus.EN_REVISION) 
-                      ? ElevatedButton(
-                          onPressed: isProcessing ? null : () async {
-                              setDialogState(() => isProcessing = true);
-                              try {
-                                await _orderService.approveQualityControl(order.id!);
-                                if (mounted) {
-                                  Navigator.pop(context);
-                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Pedido aprobado por Calidad"), backgroundColor: Colors.green));
-                                }
-                              } catch (e) {
-                                setDialogState(() => isProcessing = false);
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error al aprobar: $e"), backgroundColor: Colors.red));
-                              }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF10B981), // Verde
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          child: isProcessing 
-                              ? const CircularProgressIndicator(color: Colors.white) 
-                              : const Text("LISTO (APROBAR CALIDAD)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                        )
-                      : Column(
-                          children: [
-                            if (order.status == OrderStatus.AUDIO_LISTO && (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.recepcion))
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 8.0),
-                                child: ElevatedButton(
-                                  onPressed: isProcessing ? null : () async {
-                                    setDialogState(() => isProcessing = true);
-                                    try {
-                                      await _orderService.markAsDelivered(order.id!);
-                                      if (mounted) {
-                                        Navigator.pop(context);
-                                        _loadData();
-                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                          content: const Text("✅ Pedido entregado al cliente"), 
-                                          backgroundColor: const Color(0xFFFFEB3B).withOpacity(0.9),
-                                        ));
-                                      }
-                                    } catch (e) {
-                                      if (mounted) {
-                                        setDialogState(() => isProcessing = false);
-                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                                          content: Text("❌ No se pudo marcar como entregado"), 
-                                          backgroundColor: Colors.redAccent
-                                        ));
+                              const SizedBox(width: 8),
+                              if (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.recepcion || _currentUser?.role == UserRole.control_calidad)
+                                IconButton(
+                                  onPressed: () async {
+                                    final confirmed = await _showConfirmDelete(context, "audio de muestra");
+                                    if (confirmed == true) {
+                                      setDialogState(() => tempAudioMuestraUrl = null);
+                                      try {
+                                        await _orderService.updateAudioMuestra(order.id!, null);
+                                      } catch (e) {
+                                        print("Error eliminando muestra: $e");
                                       }
                                     }
                                   },
+                                  icon: const Icon(Icons.delete, color: Colors.redAccent, size: 20),
+                                  tooltip: "Eliminar Muestra",
+                                ),
+                            ],
+                          )
+                        else if (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.recepcion || _currentUser?.role == UserRole.control_calidad)
+                          Column(
+                            children: [
+                              DropTarget(
+                                onDragDone: (details) async {
+                                  final isQueued = UploadService().isUploading(order.id.toString(), 'audio_muestra_url');
+                                  if (details.files.isNotEmpty && !isUploadingMuestra && !isQueued) {
+                                    final file = details.files.first;
+                                    setDialogState(() {
+                                      isDraggingMuestra = false;
+                                      isUploadingMuestra = true;
+                                    });
+                                    try {
+                                      final bytes = await file.readAsBytes();
+                                      final platformFile = PlatformFile(name: file.name, size: bytes.length, bytes: bytes);
+
+                                    UploadService().startUpload(
+                                      clientName: order.clientName,
+                                      orderId: order.id.toString(),
+                                      file: platformFile,
+                                      structuralReference: 'audio_muestra_url', 
+                                    );
+
+                                    if (context.mounted) {
+                                      Navigator.pop(context); // Cerrar modal inmediatamente
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text("🚀 Subida de muestra iniciada en segundo plano. Se te avisará al terminar."), 
+                                          backgroundColor: Color(0xFF10B981),
+                                          duration: Duration(seconds: 4),
+                                        )
+                                      );
+                                    }
+                                    } catch (e) {
+                                      print("Error drop muestra: $e");
+                                    } finally {
+                                      setDialogState(() => isUploadingMuestra = false);
+                                    }
+                                  }
+                                },
+                                onDragEntered: (details) => setDialogState(() => isDraggingMuestra = true),
+                                onDragExited: (details) => setDialogState(() => isDraggingMuestra = false),
+                                child: OutlinedButton.icon(
+                                  onPressed: (isUploadingMuestra || UploadService().isUploading(order.id.toString(), 'audio_muestra_url')) ? null : () async {
+                                    FilePickerResult? result = await FilePicker.platform.pickFiles(
+                                      type: FileType.custom,
+                                      allowedExtensions: ['mp3', 'wav', 'm4a', 'zip'],
+                                      withData: true, // Requerido para Web
+                                    );
+
+                                    if (result != null) {
+                                      setDialogState(() => isUploadingMuestra = true);
+                                      final file = result.files.first;
+                                      UploadService().startUpload(
+                                        clientName: order.clientName,
+                                        orderId: order.id.toString(),
+                                        file: file,
+                                        structuralReference: 'audio_muestra_url', 
+                                      );
+
+                                      if (context.mounted) {
+                                        Navigator.pop(context); // Cerrar modal inmediatamente
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text("🚀 Subida de muestra iniciada en segundo plano. Se te avisará al terminar."), 
+                                            backgroundColor: Color(0xFF10B981),
+                                            duration: Duration(seconds: 4),
+                                          )
+                                        );
+                                      }
+                                      setDialogState(() => isUploadingMuestra = false);
+                                    }
+                                  },
+                                  icon: const Icon(Icons.cloud_upload_outlined, size: 16),
+                                  label: Text(
+                                    isDraggingMuestra ? "¡SUELTA AQUÍ!" : ((isUploadingMuestra || UploadService().isUploading(order.id.toString(), 'audio_muestra_url')) ? "Subiendo..." : "SUBIR AUDIO DE MUESTRA"), 
+                                    style: const TextStyle(fontSize: 12)
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    backgroundColor: isDraggingMuestra ? Colors.tealAccent.withOpacity(0.1) : Colors.transparent,
+                                    foregroundColor: Colors.tealAccent,
+                                    side: BorderSide(color: isDraggingMuestra ? Colors.tealAccent : Colors.tealAccent.withOpacity(0.3)),
+                                    minimumSize: const Size(double.infinity, 40),
+                                  ),
+                                ),
+                              ),
+                              if (isDraggingMuestra || isDraggingFinal)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 8.0),
+                                  child: Text(
+                                    "Detectado archivo para ${isDraggingMuestra ? 'MUESTRA' : 'AUDIO FINAL'}", 
+                                    style: TextStyle(color: isDraggingMuestra ? Colors.tealAccent : Colors.blueAccent, fontSize: 10, fontWeight: FontWeight.bold)
+                                  ),
+                                ),
+                            ],
+                          )
+                        else
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.02), borderRadius: BorderRadius.circular(8)),
+                            child: const Text("Aún no se ha cargado el audio de muestra", style: TextStyle(color: Colors.white24, fontSize: 11, fontStyle: FontStyle.italic)),
+                          ),
+                        
+                        const SizedBox(height: 16),
+
+                        // 4. Proyecto Editable
+                        const Text("PROYECTO EDITABLE (.AUP3 / ZIP)", style: TextStyle(color: Colors.purpleAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        if (tempProjectUrl != null) ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _orderService.openUrl(tempProjectUrl),
+                                  icon: const Icon(Icons.folder_zip, color: Colors.purpleAccent),
+                                  label: const Text("Ver Proyecto"),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFFFFEB3B), 
-                                    foregroundColor: Colors.black,
+                                    backgroundColor: Colors.purple.withOpacity(0.1), 
+                                    foregroundColor: Colors.purpleAccent,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _showDownloadOptions(tempProjectUrl, "Archivo de Proyecto"),
+                                  icon: const Icon(Icons.download_rounded),
+                                  label: const Text("Descargar"),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.purpleAccent, 
+                                    side: BorderSide(color: Colors.purpleAccent.withOpacity(0.5)),
+                                  ),
+                                ),
+                              ),
+                              if (_currentUser?.role == UserRole.admin || 
+                                  _currentUser?.role == UserRole.recepcion || 
+                                  _currentUser?.role == UserRole.control_calidad)
+                                IconButton(
+                                  onPressed: () async {
+                                    final confirmed = await _showConfirmDelete(context, "proyecto editable");
+                                    if (confirmed == true) {
+                                      setDialogState(() => tempProjectUrl = null);
+                                      try {
+                                        await _orderService.updateOrder(order.copyWith(clearProjectFile: true));
+                                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Proyecto eliminado"), backgroundColor: Colors.redAccent));
+                                      } catch (e) {
+                                        print("Error eliminando proyecto: $e");
+                                      }
+                                    }
+                                  },
+                                  icon: const Icon(Icons.delete, color: Colors.redAccent, size: 20),
+                                  tooltip: "Eliminar Proyecto",
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          // Botón para REEMPLAZAR
+                          if (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.recepcion || _currentUser?.role == UserRole.control_calidad)
+                            SizedBox(
+                              width: double.infinity,
+                              child: DropTarget(
+                                onDragDone: (details) async {
+                                  final isQueued = UploadService().isUploading(order.id.toString(), 'project_file_url');
+                                  if (details.files.isNotEmpty && !isUploadingProject && !isQueued) {
+                                    final file = details.files.first;
+                                    setDialogState(() {
+                                      isDraggingProject = false;
+                                      isUploadingProject = true;
+                                    });
+                                    try {
+                                      final bytes = await file.readAsBytes();
+                                      UploadService().startUpload(
+                                        clientName: order.clientName,
+                                        orderId: order.id.toString(),
+                                        file: PlatformFile(name: file.name, size: bytes.length, bytes: bytes),
+                                        structuralReference: 'project_file_url', 
+                                      );
+
+                                      if (context.mounted) {
+                                        Navigator.pop(context); 
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text("🚀 Reemplazo de proyecto iniciado"), backgroundColor: Colors.purpleAccent)
+                                        );
+                                      }
+                                    } catch (e) {
+                                      print("Error al leer archivo: $e");
+                                    } finally {
+                                      setDialogState(() => isUploadingProject = false);
+                                    }
+                                  }
+                                },
+                                onDragEntered: (details) => setDialogState(() => isDraggingProject = true),
+                                onDragExited: (details) => setDialogState(() => isDraggingProject = false),
+                                child: OutlinedButton.icon(
+                                  onPressed: (isUploadingProject || UploadService().isUploading(order.id.toString(), 'project_file_url')) ? null : () async {
+                                    final result = await FilePicker.platform.pickFiles(
+                                      type: FileType.custom,
+                                      allowedExtensions: ['aup3', 'zip', 'rar'],
+                                      withData: true, // Requerido para Web
+                                    );
+                                    if (result != null) {
+                                      setDialogState(() => isUploadingProject = true);
+                                      UploadService().startUpload(
+                                        clientName: order.clientName,
+                                        orderId: order.id.toString(),
+                                        file: result.files.first,
+                                        structuralReference: 'project_file_url',
+                                      );
+                                      if (context.mounted) {
+                                        Navigator.pop(context);
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text("🚀 Reemplazo de proyecto iniciado"), backgroundColor: Colors.purpleAccent)
+                                        );
+                                      }
+                                      setDialogState(() => isUploadingProject = false);
+                                    }
+                                  },
+                                  icon: const Icon(Icons.sync_rounded, size: 16),
+                                  label: Text(isDraggingProject ? "SOLTAR PARA REEMPLAZAR" : ((isUploadingProject || UploadService().isUploading(order.id.toString(), 'project_file_url')) ? "Subiendo..." : "REEMPLAZAR PROYECTO")),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.purpleAccent,
+                                    side: BorderSide(color: isDraggingProject ? Colors.purpleAccent : Colors.purpleAccent.withOpacity(0.3)),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ] else if (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.recepcion || _currentUser?.role == UserRole.control_calidad) ...[
+                          // Si NO hay proyecto, permitir subirlo
+                          Column(
+                            children: [
+                              DropTarget(
+                                onDragDone: (details) async {
+                                  final isQueued = UploadService().isUploading(order.id.toString(), 'project_file_url');
+                                  if (details.files.isNotEmpty && !isUploadingProject && !isQueued) {
+                                    final file = details.files.first;
+                                    setDialogState(() {
+                                      isDraggingProject = false;
+                                      isUploadingProject = true;
+                                    });
+                                    try {
+                                      final bytes = await file.readAsBytes();
+                                      UploadService().startUpload(
+                                        clientName: order.clientName,
+                                        orderId: order.id.toString(),
+                                        file: PlatformFile(name: file.name, size: bytes.length, bytes: bytes),
+                                        structuralReference: 'project_file_url', 
+                                      );
+
+                                      if (context.mounted) {
+                                        Navigator.pop(context); 
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text("🚀 Subida de Proyecto iniciada en segundo plano. Se te avisará al terminar."), 
+                                            backgroundColor: Color(0xFF7C3AED),
+                                            duration: Duration(seconds: 4),
+                                          )
+                                        );
+                                      }
+                                    } catch (e) {
+                                      print("Error drop project: $e");
+                                    } finally {
+                                      setDialogState(() => isUploadingProject = false);
+                                    }
+                                  }
+                                },
+                                onDragEntered: (details) => setDialogState(() => isDraggingProject = true),
+                                onDragExited: (details) => setDialogState(() => isDraggingProject = false),
+                                child: OutlinedButton.icon(
+                                  onPressed: (isUploadingProject || UploadService().isUploading(order.id.toString(), 'project_file_url')) ? null : () async {
+                                    FilePickerResult? result = await FilePicker.platform.pickFiles(
+                                      type: FileType.custom,
+                                      allowedExtensions: ['zip', 'aup3', 'rar'],
+                                      withData: true,
+                                    );
+
+                                    if (result != null) {
+                                      setDialogState(() => isUploadingProject = true);
+                                      try {
+                                        UploadService().startUpload(
+                                          clientName: order.clientName,
+                                          orderId: order.id.toString(),
+                                          file: result.files.first,
+                                          structuralReference: 'project_file_url', 
+                                        );
+
+                                        if (context.mounted) {
+                                          Navigator.pop(context); 
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text("🚀 Subida de Proyecto iniciada en segundo plano. Se te avisará al terminar."), 
+                                              backgroundColor: Color(0xFF7C3AED),
+                                              duration: Duration(seconds: 4),
+                                            )
+                                          );
+                                        }
+                                      } catch (e) {
+                                        print("Error pick project: $e");
+                                      } finally {
+                                        setDialogState(() => isUploadingProject = false);
+                                      }
+                                    }
+                                  },
+                                  icon: const Icon(Icons.cloud_upload_outlined, color: Colors.purpleAccent),
+                                  label: Text(
+                                    isDraggingProject ? "¡SUELTA EL PROYECTO AQUÍ!" : ((isUploadingProject || UploadService().isUploading(order.id.toString(), 'project_file_url')) ? "Subiendo..." : "SUBIR PROYECTO (.AUP3 / ZIP)"), 
+                                    style: const TextStyle(color: Colors.purpleAccent)
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    side: BorderSide(color: isDraggingProject ? Colors.white : Colors.purpleAccent, width: isDraggingProject ? 2 : 1),
+                                    backgroundColor: isDraggingProject ? Colors.purpleAccent.withOpacity(0.1) : Colors.transparent,
                                     minimumSize: const Size(double.infinity, 45),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                   ),
-                                  child: isProcessing 
-                                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black)) 
-                                    : const Text("ENTREGAR PEDIDO", style: TextStyle(fontWeight: FontWeight.bold)),
                                 ),
                               ),
-                            ElevatedButton(
-                              onPressed: (tempGenId != null && tempEdId != null && !isProcessing && (order.status == OrderStatus.PENDIENTE || order.status == OrderStatus.EN_GENERACION)) 
-                                  ? () async {
-                                      setDialogState(() => isProcessing = true);
-                                      try {
-                                        await _orderService.assignStaff(order.id!, tempGenId!, tempEdId!);
-                                        if (mounted) {
-                                          Navigator.pop(context);
-                                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Pedido actualizado correctamente"), backgroundColor: Colors.green));
-                                        }
-                                      } catch (e) {
-                                        setDialogState(() => isProcessing = false);
-                                      }
-                                    } 
-                                  : null,
+                            ],
+                          ),
+                        ] else
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.02), borderRadius: BorderRadius.circular(8)),
+                            child: const Text("Sin proyecto editable", style: TextStyle(color: Colors.white24, fontSize: 11, fontStyle: FontStyle.italic)),
+                          ),
+
+                        const SizedBox(height: 16),
+                        const Divider(color: Colors.white10),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Asignación
+                      const Text("ASIGNACIÓN DE PERSONAL", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                      const SizedBox(height: 12),
+                      
+                      // Dropdown Generador
+                      _buildDropdown("Generador", _generators, tempGenId, (val) => setDialogState(() => tempGenId = val), 
+                        enabled: (order.status == OrderStatus.PENDIENTE || order.status == OrderStatus.EN_GENERACION)),
+                      const SizedBox(height: 12),
+                      // Dropdown Editor
+                      _buildDropdown("Editor", _editors, tempEdId, (val) => setDialogState(() => tempEdId = val),
+                        enabled: (order.status == OrderStatus.PENDIENTE || order.status == OrderStatus.EN_GENERACION)),
+
+                      const SizedBox(height: 20),
+                      const Divider(color: Colors.white10),
+                      const SizedBox(height: 16),
+
+                      // Sección de Observaciones de Calidad
+                      const Text("NUEVA OBSERVACIÓN (CALIDAD)", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: observationController,
+                        maxLines: 3,
+                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        decoration: InputDecoration(
+                          hintText: "Escribe un comentario si es necesario...",
+                          hintStyle: const TextStyle(color: Colors.white24),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.05),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          contentPadding: const EdgeInsets.all(12),
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      
+                       SizedBox(
+                        width: double.infinity,
+                        child: (order.status == OrderStatus.EN_REVISION) 
+                          ? ElevatedButton(
+                              onPressed: isProcessing ? null : () async {
+                                  setDialogState(() => isProcessing = true);
+                                  try {
+                                    await _orderService.approveQualityControl(order.id!);
+                                    if (mounted) {
+                                      Navigator.pop(context);
+                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Pedido aprobado por Calidad"), backgroundColor: Colors.green));
+                                    }
+                                  } catch (e) {
+                                    setDialogState(() => isProcessing = false);
+                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error al aprobar: $e"), backgroundColor: Colors.red));
+                                  }
+                              },
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF7C3AED),
-                                disabledBackgroundColor: Colors.white.withOpacity(0.05),
-                                minimumSize: const Size(double.infinity, 45),
+                                backgroundColor: const Color(0xFF10B981), // Verde
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               ),
                               child: isProcessing 
                                   ? const CircularProgressIndicator(color: Colors.white) 
-                                  : Text(
-                                      (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.EDICION || order.status == OrderStatus.ENTREGADO) 
-                                        ? "ORDEN PROCESADA" 
-                                        : "GENERAR ORDEN", 
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold, 
-                                        color: (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.EDICION || order.status == OrderStatus.ENTREGADO) ? Colors.white24 : Colors.white
-                                      )
+                                  : const Text("LISTO (APROBAR CALIDAD)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                            )
+                          : Column(
+                              children: [
+                                if (order.status == OrderStatus.AUDIO_LISTO && (_currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.recepcion))
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 8.0),
+                                    child: ElevatedButton(
+                                      onPressed: isProcessing ? null : () async {
+                                        setDialogState(() => isProcessing = true);
+                                        try {
+                                          await _orderService.markAsDelivered(order.id!);
+                                          if (mounted) {
+                                            Navigator.pop(context);
+                                            _loadData();
+                                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                              content: const Text("✅ Pedido entregado al cliente"), 
+                                              backgroundColor: const Color(0xFFFFEB3B).withOpacity(0.9),
+                                            ));
+                                          }
+                                        } catch (e) {
+                                          if (mounted) {
+                                            setDialogState(() => isProcessing = false);
+                                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                              content: Text("❌ No se pudo marcar como entregado"), 
+                                              backgroundColor: Colors.redAccent
+                                            ));
+                                          }
+                                        }
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFFFFEB3B), 
+                                        foregroundColor: Colors.black,
+                                        minimumSize: const Size(double.infinity, 45),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      ),
+                                      child: isProcessing 
+                                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black)) 
+                                        : const Text("ENTREGAR PEDIDO", style: TextStyle(fontWeight: FontWeight.bold)),
                                     ),
+                                  ),
+                                ElevatedButton(
+                                  onPressed: (tempGenId != null && tempEdId != null && !isProcessing && (order.status == OrderStatus.PENDIENTE || order.status == OrderStatus.EN_GENERACION)) 
+                                      ? () async {
+                                          setDialogState(() => isProcessing = true);
+                                          try {
+                                            String finalObservations = order.observations ?? '';
+                                            if (observationController.text.isNotEmpty) {
+                                              final timestamp = DateFormat('dd/MM HH:mm').format(DateTime.now());
+                                              final separator = finalObservations.isEmpty ? "" : "\n";
+                                              finalObservations += "$separator- [CALIDAD $timestamp]: ${observationController.text.trim()}";
+                                            }
+
+                                            await _orderService.assignStaff(
+                                              order.id!, 
+                                              tempGenId!, 
+                                              tempEdId!,
+                                              newObservations: observationController.text.isNotEmpty ? finalObservations : null,
+                                            );
+                                            
+                                            if (mounted) {
+                                              Navigator.pop(context);
+                                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Pedido actualizado correctamente"), backgroundColor: Colors.green));
+                                            }
+                                          } catch (e) {
+                                            setDialogState(() => isProcessing = false);
+                                          }
+                                        } 
+                                      : null,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF7C3AED),
+                                    disabledBackgroundColor: Colors.white.withOpacity(0.05),
+                                    minimumSize: const Size(double.infinity, 45),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  child: isProcessing 
+                                      ? const CircularProgressIndicator(color: Colors.white) 
+                                      : Text(
+                                          (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.EDICION || order.status == OrderStatus.ENTREGADO) 
+                                            ? "ORDEN PROCESADA" 
+                                            : "GENERAR ORDEN", 
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold, 
+                                            color: (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.EDICION || order.status == OrderStatus.ENTREGADO) ? Colors.white24 : Colors.white
+                                          )
+                                        ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                  )
-                ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
-            ),
-          ),
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
   }
 

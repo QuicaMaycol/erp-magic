@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'dart:io' as io;
+import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -18,22 +19,54 @@ class ProductionService {
         allowedExtensions: bucket == 'documents' 
             ? ['pdf', 'doc', 'docx', 'txt'] 
             : ['mp3', 'wav', 'm4a'],
+        withData: true, // Obligatorio para Web
       );
 
       if (result != null) {
         final platformFile = result.files.first;
         final fileName = '${DateTime.now().millisecondsSinceEpoch}_${platformFile.name.replaceAll(RegExp(r'\s+'), '_')}';
         
-        // Subida compatible Web/Desktop/Mobile
-        if (platformFile.bytes != null) {
-          // Web o Desktop con bytes en memoria
-          await _supabase.storage.from(bucket).uploadBinary(fileName, platformFile.bytes!);
-        } else if (platformFile.path != null) {
-          // Mobile / Desktop IO
-          await _supabase.storage.from(bucket).upload(fileName, File(platformFile.path!));
-        } else {
-          throw Exception("No se pudo leer el archivo");
+        // Subida con REINTENTOS para mayor estabilidad
+        const int maxRetries = 3;
+        bool uploadSuccess = false;
+
+        for (int i = 0; i <= maxRetries; i++) {
+          try {
+            if (i > 0) {
+              print('🔄 Reintentando subida en ProductionService (${i}/${maxRetries})...');
+              await Future.delayed(Duration(seconds: i * 2));
+            }
+
+            if (kIsWeb && platformFile.bytes != null) {
+              await _supabase.storage.from(bucket).uploadBinary(
+                fileName, 
+                platformFile.bytes!,
+                fileOptions: const FileOptions(upsert: true),
+              ).timeout(const Duration(minutes: 5));
+            } else if (platformFile.bytes != null) {
+              await _supabase.storage.from(bucket).uploadBinary(
+                fileName, 
+                platformFile.bytes!,
+                fileOptions: const FileOptions(upsert: true),
+              ).timeout(const Duration(minutes: 5));
+            } else if (platformFile.path != null) {
+              await _supabase.storage.from(bucket).upload(
+                fileName, 
+                io.File(platformFile.path!),
+              ).timeout(const Duration(minutes: 5));
+            } else {
+              throw Exception("No se pudo leer el archivo");
+            }
+            
+            uploadSuccess = true;
+            break;
+          } catch (e) {
+            print('⚠️ Intento $i fallido en ProductionService: $e');
+            if (i == maxRetries) rethrow;
+          }
         }
+
+        if (!uploadSuccess) return null;
 
         return _supabase.storage.from(bucket).getPublicUrl(fileName);
       }

@@ -5,7 +5,8 @@ import 'package:desktop_drop/desktop_drop.dart';
 import '../models/order_model.dart';
 import '../models/user_model.dart';
 import '../services/order_service.dart';
-import '../services/n8n_service.dart'; // Servicio N8n
+import '../services/n8n_service.dart';
+import '../services/upload_service.dart';
 import 'qc_order_card.dart';
 
 class GeneratorView extends StatefulWidget {
@@ -99,52 +100,30 @@ class _GeneratorViewState extends State<GeneratorView> {
               Positioned.fill(
                 child: DropTarget(
                   onDragDone: (details) async {
-                    if (details.files.isNotEmpty && !isUploading) {
+                    if (details.files.isNotEmpty) {
                       final file = details.files.first;
-                      setDialogState(() {
-                        isDragging = false;
-                        isUploading = true;
-                      });
+                      setDialogState(() => isDragging = false);
 
                       try {
-                        print("DEBUG: Audio soltado: ${file.name}");
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("Capturando audio..."), duration: Duration(milliseconds: 700))
-                          );
-                        }
-
                         final bytes = await file.readAsBytes();
-                        // Simular PlatformFile para el servicio n8n
-                        final platformFile = PlatformFile(
-                          name: file.name,
-                          size: bytes.length,
-                          bytes: bytes,
-                        );
-
-                        final n8nUrl = await _n8nService.uploadFile(
+                        UploadService().startUpload(
                           clientName: order.clientName,
                           orderId: order.id.toString(),
-                          file: platformFile,
+                          file: PlatformFile(name: file.name, size: bytes.length, bytes: bytes),
                           structuralReference: 'base_audio_url', 
                         );
-
-                        if (n8nUrl != null) {
-                          setDialogState(() {
-                            tempAudioUrl = n8nUrl;
-                            isUploading = false;
-                          });
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text("✅ Audio cargado correctamente"), backgroundColor: Colors.green)
-                            );
-                          }
-                        } else {
-                          setDialogState(() => isUploading = false);
+                        
+                        if (context.mounted) {
+                          Navigator.pop(context); // Cerrar modal inmediatamente
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("🚀 Subida de locución iniciada en segundo plano. Se te avisará al terminar."), 
+                              backgroundColor: Colors.amber,
+                              duration: Duration(seconds: 4),
+                            )
+                          );
                         }
                       } catch (e) {
-                        print("DEBUG: Error en Drop Audio: $e");
-                        setDialogState(() => isUploading = false);
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text("❌ Error: $e"), backgroundColor: Colors.red)
@@ -262,7 +241,7 @@ class _GeneratorViewState extends State<GeneratorView> {
                               children: [
                                 const Icon(Icons.check_circle, color: Colors.green, size: 20),
                                 const SizedBox(width: 12),
-                                Expanded(child: Text("Audio cargado: ${tempAudioUrl!.split('/').last}", style: const TextStyle(color: Colors.green, fontSize: 13), overflow: TextOverflow.ellipsis)),
+                                Expanded(child: Text("Audio cargado", style: const TextStyle(color: Colors.green, fontSize: 13), overflow: TextOverflow.ellipsis)),
                                 IconButton(
                                   icon: const Icon(Icons.play_arrow, color: Colors.white),
                                   onPressed: () => _orderService.openUrl(tempAudioUrl),
@@ -291,11 +270,6 @@ class _GeneratorViewState extends State<GeneratorView> {
                                       setDialogState(() => tempAudioUrl = null);
                                       try {
                                         await _orderService.updateOrder(order.copyWith(clearBaseAudio: true));
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            const SnackBar(content: Text("Audio eliminado correctamente"), backgroundColor: Colors.blueGrey)
-                                          );
-                                        }
                                       } catch (e) {
                                         print("Error eliminando audio: $e");
                                       }
@@ -310,45 +284,39 @@ class _GeneratorViewState extends State<GeneratorView> {
                           width: double.infinity,
                           height: 45,
                           child: OutlinedButton.icon(
-                            onPressed: isUploading ? null : () async {
-                              setDialogState(() => isUploading = true);
-                              
-                              // 1. Selección local del archivo
+                            onPressed: () async {
+                              // Selección local del archivo
                               FilePickerResult? result = await FilePicker.platform.pickFiles(
                                 type: FileType.custom,
                                 allowedExtensions: ['mp3', 'wav', 'm4a', 'zip'],
+                                withData: true, // Obligatorio para Web
                               );
 
                               if (result != null) {
-                                 final file = result.files.first;
                                  try {
-                                   final n8nUrl = await _n8nService.uploadFile(
+                                   UploadService().startUpload(
                                      clientName: order.clientName,
                                      orderId: order.id.toString(),
-                                     file: file,
+                                     file: result.files.first,
                                      structuralReference: 'base_audio_url', 
                                    );
-
-                                   if (n8nUrl != null) {
-                                     setDialogState(() {
-                                       tempAudioUrl = n8nUrl;
-                                       isUploading = false;
-                                     });
-                                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Audio subido a n8n correctamente"), backgroundColor: Colors.green));
-                                   } else {
-                                     setDialogState(() => isUploading = false);
+                                   
+                                   if (context.mounted) {
+                                     Navigator.pop(context); // Cerrar modal inmediatamente
+                                     ScaffoldMessenger.of(context).showSnackBar(
+                                       const SnackBar(
+                                         content: Text("🚀 Subida de locución iniciada en segundo plano. Se te avisará al terminar."), 
+                                         backgroundColor: Colors.amber,
+                                         duration: Duration(seconds: 4),
+                                       )
+                                     );
                                    }
                                  } catch (e) {
-                                   setDialogState(() => isUploading = false);
-                                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error al subir: $e"), backgroundColor: Colors.red));
+                                   if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error al subir: $e"), backgroundColor: Colors.red));
                                  }
-                              } else {
-                                setDialogState(() => isUploading = false);
                               }
                             },
-                            icon: isUploading 
-                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                                : const Icon(Icons.upload_file),
+                            icon: const Icon(Icons.upload_file),
                             label: Text(tempAudioUrl == null ? "SUBIR AUDIO (MP3/WAV/ZIP)" : "REEMPLAZAR AUDIO/ZIP"),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.white,

@@ -6,7 +6,9 @@ import '../models/order_model.dart';
 import '../models/user_model.dart';
 import '../services/order_service.dart';
 import '../services/n8n_service.dart'; // Importamos N8nService
+import '../services/upload_service.dart'; // Importamos UploadService
 import 'qc_order_card.dart';
+import 'premium_qc_panel.dart';
 
 class EditorView extends StatefulWidget {
   final UserModel currentUser;
@@ -205,34 +207,30 @@ class _EditorViewState extends State<EditorView> {
 
                         DropTarget(
                           onDragDone: (details) async {
-                            if (details.files.isNotEmpty && !isUploadingProject) {
+                            if (details.files.isNotEmpty) {
                               final file = details.files.first;
-                              setDialogState(() {
-                                isDraggingProject = false;
-                                isUploadingProject = true;
-                              });
+                              setDialogState(() => isDraggingProject = false);
 
                               try {
                                 final bytes = await file.readAsBytes();
-                                final n8nUrl = await _n8nService.uploadFile(
+                                UploadService().startUpload(
                                   clientName: order.clientName,
                                   orderId: order.id.toString(),
                                   file: PlatformFile(name: file.name, size: bytes.length, bytes: bytes),
                                   structuralReference: 'project_file_url', 
                                 );
-
-                                if (n8nUrl != null) {
-                                  setDialogState(() {
-                                    tempProjectUrl = n8nUrl;
-                                    isUploadingProject = false;
-                                  });
-                                  await _orderService.updateOrder(order.copyWith(projectFileUrl: n8nUrl));
-                                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Proyecto cargado"), backgroundColor: Colors.green));
-                                } else {
-                                  setDialogState(() => isUploadingProject = false);
+                                
+                                if (context.mounted) {
+                                  Navigator.pop(context); // Cerrar modal inmediatamente
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text("🚀 Subida de Proyecto iniciada en segundo plano. Se te avisará al terminar."), 
+                                      backgroundColor: Color(0xFF7C3AED),
+                                      duration: Duration(seconds: 4),
+                                    )
+                                  );
                                 }
                               } catch (e) {
-                                setDialogState(() => isUploadingProject = false);
                                 if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error: $e"), backgroundColor: Colors.red));
                               }
                             }
@@ -243,40 +241,38 @@ class _EditorViewState extends State<EditorView> {
                             width: double.infinity,
                             height: 45,
                             child: OutlinedButton.icon(
-                              onPressed: (isUploadingProject || isUploadingFinal) ? null : () async {
-                                setDialogState(() => isUploadingProject = true);
-                                FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.any);
+                              onPressed: isUploadingFinal ? null : () async {
+                                FilePickerResult? result = await FilePicker.platform.pickFiles(
+                                  type: FileType.custom,
+                                  allowedExtensions: ['zip', 'rar', 'aup3', 'mp3', 'wav'],
+                                  withData: true, // Obligatorio para Web
+                                );
 
                                 if (result != null) {
                                    try {
-                                     final n8nUrl = await _n8nService.uploadFile(
+                                     UploadService().startUpload(
                                        clientName: order.clientName,
                                        orderId: order.id.toString(),
                                        file: result.files.first,
                                        structuralReference: 'project_file_url', 
                                      );
-
-                                     if (n8nUrl != null) {
-                                       setDialogState(() {
-                                         tempProjectUrl = n8nUrl;
-                                         isUploadingProject = false;
-                                       });
-                                       await _orderService.updateOrder(order.copyWith(projectFileUrl: n8nUrl));
-                                       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Proyecto subido correctamente"), backgroundColor: Colors.green));
-                                     } else {
-                                       setDialogState(() => isUploadingProject = false);
+                                     
+                                     if (context.mounted) {
+                                       Navigator.pop(context); // Cerrar modal inmediatamente
+                                       ScaffoldMessenger.of(context).showSnackBar(
+                                         const SnackBar(
+                                           content: Text("🚀 Subida de Proyecto iniciada en segundo plano. Se te avisará al terminar."), 
+                                           backgroundColor: Color(0xFF7C3AED),
+                                           duration: Duration(seconds: 4),
+                                         )
+                                       );
                                      }
                                    } catch (e) {
-                                     setDialogState(() => isUploadingProject = false);
                                      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
                                    }
-                                } else {
-                                  setDialogState(() => isUploadingProject = false);
                                 }
                               },
-                              icon: isUploadingProject 
-                                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                                  : const Icon(Icons.upload_file),
+                              icon: const Icon(Icons.upload_file),
                               label: Text(tempProjectUrl == null ? "SUBIR PROYECTO EDITABLE" : "REEMPLAZAR PROYECTO"),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.purpleAccent,
@@ -371,34 +367,30 @@ class _EditorViewState extends State<EditorView> {
 
                         DropTarget(
                           onDragDone: (details) async {
-                            if (details.files.isNotEmpty && !isUploadingFinal) {
+                            if (details.files.isNotEmpty) {
                               final file = details.files.first;
-                              setDialogState(() {
-                                isDraggingFinal = false;
-                                isUploadingFinal = true;
-                              });
+                              setDialogState(() => isDraggingFinal = false);
 
                               try {
                                 final bytes = await file.readAsBytes();
-                                final n8nUrl = await _n8nService.uploadFile(
+                                UploadService().startUpload(
                                   clientName: order.clientName,
                                   orderId: order.id.toString(),
                                   file: PlatformFile(name: file.name, size: bytes.length, bytes: bytes),
                                   structuralReference: 'final_audio_url', 
                                 );
-
-                                if (n8nUrl != null) {
-                                  setDialogState(() {
-                                    tempFinalAudioUrl = n8nUrl;
-                                    isUploadingFinal = false;
-                                  });
-                                  await _orderService.updateAudioFinal(order.id!, n8nUrl);
-                                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Audio final cargado"), backgroundColor: Colors.green));
-                                } else {
-                                  setDialogState(() => isUploadingFinal = false);
+                                
+                                if (context.mounted) {
+                                  Navigator.pop(context); // Cerrar modal inmediatamente
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text("🚀 Subida de Audio Final iniciada. Se te avisará al terminar."), 
+                                      backgroundColor: Color(0xFF2563EB),
+                                      duration: Duration(seconds: 4),
+                                    )
+                                  );
                                 }
                               } catch (e) {
-                                setDialogState(() => isUploadingFinal = false);
                                 if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error: $e"), backgroundColor: Colors.red));
                               }
                             }
@@ -409,43 +401,38 @@ class _EditorViewState extends State<EditorView> {
                             width: double.infinity,
                             height: 45,
                             child: OutlinedButton.icon(
-                              onPressed: (isUploadingFinal || isUploadingProject) ? null : () async {
-                                setDialogState(() => isUploadingFinal = true);
+                              onPressed: isUploadingProject ? null : () async {
                                 FilePickerResult? result = await FilePicker.platform.pickFiles(
                                   type: FileType.custom,
                                   allowedExtensions: ['mp3', 'wav', 'm4a'],
+                                  withData: true, // Obligatorio para Web
                                 );
 
                                 if (result != null) {
                                    try {
-                                     final n8nUrl = await _n8nService.uploadFile(
+                                     UploadService().startUpload(
                                        clientName: order.clientName,
                                        orderId: order.id.toString(),
                                        file: result.files.first,
                                        structuralReference: 'final_audio_url', 
                                      );
-
-                                     if (n8nUrl != null) {
-                                       setDialogState(() {
-                                         tempFinalAudioUrl = n8nUrl;
-                                         isUploadingFinal = false;
-                                       });
-                                       await _orderService.updateAudioFinal(order.id!, n8nUrl);
-                                       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Audio final subido correctamente"), backgroundColor: Colors.green));
-                                     } else {
-                                       setDialogState(() => isUploadingFinal = false);
+                                     
+                                     if (context.mounted) {
+                                       Navigator.pop(context); // Cerrar modal inmediatamente
+                                       ScaffoldMessenger.of(context).showSnackBar(
+                                         const SnackBar(
+                                           content: Text("🚀 Subida de Audio Final iniciada. Se te avisará al terminar."), 
+                                           backgroundColor: Color(0xFF2563EB),
+                                           duration: Duration(seconds: 4),
+                                         )
+                                       );
                                      }
                                    } catch (e) {
-                                     setDialogState(() => isUploadingFinal = false);
                                      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error al subir: $e"), backgroundColor: Colors.red));
                                    }
-                                } else {
-                                  setDialogState(() => isUploadingFinal = false);
                                 }
                               },
-                              icon: isUploadingFinal 
-                                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                                  : const Icon(Icons.cloud_upload_outlined),
+                              icon: const Icon(Icons.cloud_upload_outlined),
                               label: Text(tempFinalAudioUrl == null ? "SUBIR PRODUCTO FINAL" : "REEMPLAZAR ARCHIVO"),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.white,

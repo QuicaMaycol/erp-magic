@@ -1,12 +1,14 @@
-import 'dart:io';
+import 'dart:io' as io;
 import 'dart:typed_data'; // Necesario para Uint8List
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'; // Para kIsWeb
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart'; // Para abrir URLs
+import 'package:share_plus/share_plus.dart';
 import '../models/order_model.dart';
 import '../models/user_model.dart';
 import '../supabase_config.dart';
+import 'n8n_service.dart';
 
 class OrderService {
   static final OrderService _instance = OrderService._internal();
@@ -14,6 +16,7 @@ class OrderService {
   OrderService._internal();
 
   final _supabase = Supabase.instance.client;
+  final N8nService _n8nService = N8nService(); // Referencia a n8n
 
   // Stream con Polling automático restaurado
   Stream<List<OrderModel>> get ordersStream {
@@ -68,18 +71,23 @@ class OrderService {
 
 
   // Asignar personal a una orden
-  Future<void> assignStaff(int orderId, String generatorId, String editorId) async {
-    final data = await _supabase
-        .from('orders')
-        .update({
+  Future<void> assignStaff(int orderId, String generatorId, String editorId, {String? newObservations}) async {
+    final Map<String, dynamic> updateData = {
       'generator_id': generatorId,
       'editor_id': editorId,
       'status': 'EN_GENERACION',
       'generation_started_at': DateTime.now().toIso8601String(),
-    })
-    .eq('id', orderId)
-    .select();
+    };
 
+    if (newObservations != null) {
+      updateData['observations'] = newObservations;
+    }
+
+    final data = await _supabase
+        .from('orders')
+        .update(updateData)
+        .eq('id', orderId)
+        .select();
     if ((data as List).isEmpty) {
       throw Exception("No se pudo actualizar la orden #$orderId");
     }
@@ -180,6 +188,70 @@ class OrderService {
         .eq('id', orderId);
   }
 
+  /// Limpia los archivos físicos del Storage de órdenes antiguas sin borrar el registro de la DB
+  Future<int> cleanupOldStorageFiles(int daysAntiquity) async {
+    try {
+      final now = DateTime.now();
+      final thresholdDate = now.subtract(Duration(days: daysAntiquity));
+      
+      // 1. Buscar registros antiguos que tengan archivos
+      final response = await _supabase
+          .from('orders')
+          .select('id, script_file_url, audio_muestra_url, final_audio_url, base_audio_url, project_file_url')
+          .lt('created_at', thresholdDate.toIso8601String());
+
+      final List orders = response as List;
+      int deletedCount = 0;
+
+      for (var orderJson in orders) {
+        final int id = orderJson['id'];
+        final List<String> filesToDelete = [];
+        
+        // Función auxiliar para extraer el path relativo de una URL pública de Supabase
+        String? _getPathFromUrl(String? url) {
+          if (url == null || !url.contains('/storage/v1/object/public/')) return null;
+          return url.split('/storage/v1/object/public/').last;
+        }
+
+        void _addIfValid(String field) {
+          final path = _getPathFromUrl(orderJson[field]);
+          if (path != null) filesToDelete.add(path);
+        }
+
+        _addIfValid('script_file_url');
+        _addIfValid('audio_muestra_url');
+        _addIfValid('final_audio_url');
+        _addIfValid('base_audio_url');
+        _addIfValid('project_file_url');
+
+        if (filesToDelete.isNotEmpty) {
+          try {
+            // 2. DELEGAMOS LA ELIMINACIÓN FÍSICA Y ACTUALIZACIÓN DE DB A N8N
+            final n8nSuccess = await _n8nService.triggerStorageCleanup(
+              orderId: id, 
+              filePaths: filesToDelete
+            );
+            
+            if (n8nSuccess) {
+              // Solo actualizamos observaciones para bitácora local
+              await _supabase.from('orders').update({
+                'observations': '${orderJson['observations'] ?? ''}\n[Sistema: Limpieza física y DB realizada vía n8n]'.trim(),
+              }).eq('id', id);
+              
+              deletedCount++;
+            }
+          } catch (e) {
+            print('Error delegando limpieza de orden #$id a n8n: $e');
+          }
+        }
+      }
+      return deletedCount;
+    } catch (e) {
+      print('Error general en cleanupOldStorageFiles: $e');
+      rethrow;
+    }
+  }
+
   // Actualizar Audio Final (Rol Calidad / Reemplazo)
   Future<void> updateAudioFinal(int orderId, String? audioUrl) async {
     await _supabase
@@ -188,12 +260,17 @@ class OrderService {
         .eq('id', orderId);
   }
 
-  // Actualizar Audio de Muestra
-  Future<void> updateAudioMuestra(int orderId, String? audioUrl) async {
+  // Actualizar cualquier campo de la orden
+  Future<void> updateOrderField(int orderId, String field, String? value) async {
     await _supabase
         .from('orders')
-        .update({'audio_muestra_url': audioUrl})
+        .update({field: value})
         .eq('id', orderId);
+  }
+
+  // Actualizar Audio de Muestra
+  Future<void> updateAudioMuestra(int orderId, String? audioUrl) async {
+    await updateOrderField(orderId, 'audio_muestra_url', audioUrl);
   }
 
 
@@ -207,6 +284,7 @@ class OrderService {
         allowedExtensions: bucket == 'documents' 
             ? ['pdf', 'doc', 'docx', 'txt'] 
             : ['mp3', 'wav', 'm4a'],
+        withData: kIsWeb, // Obligatorio en Web para obtener los bytes
       );
 
       if (result != null) {
@@ -219,7 +297,7 @@ class OrderService {
         // Si no hay bytes (Desktop/Mobile) y no es Web, leemos el archivo manualmente
         if (fileBytes == null && !kIsWeb && platformFile.path != null) {
           try {
-            fileBytes = await File(platformFile.path!).readAsBytes();
+            fileBytes = await io.File(platformFile.path!).readAsBytes();
           } catch (e) {
             print("Error leyendo archivo local: $e");
           }
@@ -229,11 +307,25 @@ class OrderService {
           final String contentType = bucket == 'documents' ? 'application/pdf' : 'audio/mpeg';
           print("Intentando subir a bucket: $bucket ...");
           try {
-            await _supabase.storage.from(bucket).uploadBinary(
-              fileName, 
-              fileBytes,
-              fileOptions: FileOptions(contentType: contentType, upsert: true),
-            );
+            if (kIsWeb) {
+              await _supabase.storage.from(bucket).uploadBinary(
+                fileName, 
+                fileBytes,
+                fileOptions: FileOptions(
+                  contentType: contentType, 
+                  upsert: true,
+                ),
+              );
+            } else {
+              await _supabase.storage.from(bucket).uploadBinary(
+                fileName, 
+                fileBytes,
+                fileOptions: FileOptions(
+                  contentType: contentType, 
+                  upsert: true,
+                ),
+              );
+            }
             final String publicUrl = _supabase.storage.from(bucket).getPublicUrl(fileName);
             print("SUBIDA EXITOSA. URL OBTENIDA: $publicUrl");
             return publicUrl;
@@ -312,6 +404,46 @@ class OrderService {
       }
     } catch (e) {
       print("Error al abrir URL: $e");
+    }
+  }
+
+  /// Genera una URL para compartir basada en la página web del usuario
+  String? generateShareableUrl(OrderModel order, {bool isFinal = true}) {
+    // Nueva URL de la landing page en el servidor
+    final baseUrl = "https://magicvoicestudio.com.pe/player/"; 
+    
+    String? audioUrl;
+    String type;
+    
+    if (isFinal) {
+      if (order.status != OrderStatus.AUDIO_LISTO && order.status != OrderStatus.ENTREGADO) {
+        return null;
+      }
+      audioUrl = order.finalAudioUrl;
+      type = "final";
+    } else {
+      audioUrl = order.audioMuestraUrl;
+      type = "muestra";
+    }
+
+    if (audioUrl == null) return null;
+
+    // Codificamos los parámetros para que la URL sea válida
+    final encodedUrl = Uri.encodeComponent(audioUrl);
+    final encodedClient = Uri.encodeComponent(order.clientName);
+    
+    return "$baseUrl?u=$encodedUrl&c=$encodedClient&t=$type&o=${order.id}";
+  }
+
+  /// Comparte el link usando el plugin nativo
+  Future<void> shareOrderAudio(OrderModel order, {bool isFinal = true}) async {
+    final url = generateShareableUrl(order, isFinal: isFinal);
+    if (url != null) {
+      final label = isFinal ? "Producto Final" : "Audio de Muestra";
+      await Share.share(
+        "🎧 ¡Hola! Aquí tienes tu $label de Magic Voice:\n$url",
+        subject: "Audio de Magic Voice - Pedido #${order.id}",
+      );
     }
   }
 }

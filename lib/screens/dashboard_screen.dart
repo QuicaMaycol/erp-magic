@@ -9,6 +9,7 @@ import '../models/user_model.dart';
 import '../services/order_service.dart';
 import '../services/auth_service.dart';
 import '../services/n8n_service.dart';
+import '../services/upload_service.dart';
 import '../widgets/order_card_premium.dart';
 import '../widgets/intelligent_phone_field.dart';
 
@@ -38,6 +39,16 @@ class DashboardScreenState extends State<DashboardScreen> {
   // Estado para selección masiva
   final Set<int> _selectedOrderIds = {};
   bool _isBulkLoading = false;
+
+  // Estado para mantenimiento
+  bool _isRescuing = false;
+  bool _isCleaning = false; // Estado para limpieza de storage
+  int _rescueOrderCount = 0;
+  int _maintenanceDays = 60; // Periodo de mantenimiento (30 o 60 días)
+  bool _showMaintenanceOnly = false;
+
+  // Estado para secciones colapsables
+  final Set<String> _collapsedGroups = {'✅ ENTREGADOS'};
 
   // Controlador de dropzone persistente
   DropzoneViewController? _dropzoneController;
@@ -110,6 +121,7 @@ class DashboardScreenState extends State<DashboardScreen> {
           _isLoading = false;
           _errorMessage = null;
         });
+        _calculateRescueCount();
       }
     } catch (e) {
       if (mounted) {
@@ -123,6 +135,123 @@ class DashboardScreenState extends State<DashboardScreen> {
 
   void refreshData() {
     _initialLoad();
+  }
+
+  // Métodos Públicos para control desde Navegación
+  void toggleMaintenanceFilter(bool active, {int? days}) {
+    setState(() {
+      _showMaintenanceOnly = active;
+      if (days != null) _maintenanceDays = days;
+      if (active) _selectedOrderIds.clear();
+    });
+  }
+  Future<void> handleManualCleanup() async {
+    await _handleMaintenanceCleanup();
+  }
+
+  Future<void> handleMaintenanceRescue() async {
+    await _handleMaintenanceRescue();
+  }
+
+  void _calculateRescueCount() {
+    if (_currentUser?.role != UserRole.admin) return;
+    
+    final now = DateTime.now();
+    // Empezar a alertar a la mitad del periodo para dar margen de maniobra
+    // Si es 60 días, alerta a los 30. Si es 30 días, alerta a los 15.
+    final alertDays = (_maintenanceDays / 2).floor();
+    final rescueThreshold = now.subtract(Duration(days: alertDays));
+    
+    final count = _orders.where((o) => 
+      o.createdAt.isBefore(rescueThreshold) && 
+      (o.scriptFileUrl != null || o.finalAudioUrl != null) &&
+      o.status != OrderStatus.ANULADO
+    ).length;
+    
+    setState(() {
+      _rescueOrderCount = count;
+    });
+  }
+
+  Future<void> _handleMaintenanceRescue() async {
+    if (_isRescuing) return;
+    
+    setState(() => _isRescuing = true);
+    
+    try {
+      final driveUrl = await _n8nService.triggerMaintenanceRescue();
+      
+      if (driveUrl != null) {
+        await _orderService.openUrl(driveUrl);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("✅ Rescate completado. Carpeta de Drive abierta."),
+              backgroundColor: Colors.green,
+            )
+          );
+        }
+      } else {
+        throw Exception("No se recibió URL de Drive");
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("❌ Error al iniciar el rescate masivo"),
+            backgroundColor: Colors.redAccent,
+          )
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isRescuing = false);
+      }
+    }
+  }
+
+  Future<void> _handleMaintenanceCleanup() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF16161A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('⚠️ LIMPIEZA DE STORAGE', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+        content: Text('¿Estás seguro de querer LIBERAR ESPACIO?\n\n- Se borrarán los ARCHIVOS de hace $_maintenanceDays días.\n- Los REGISTROS (nombres, guiones, estados) NO se borrarán.\n\nASEGÚRATE de haber hecho Rescate primero.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('CANCELAR')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true), 
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('LIMPIAR AHORA', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isCleaning = true);
+    try {
+      final count = await _orderService.cleanupOldStorageFiles(_maintenanceDays);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("✨ Limpieza completada: $count pedidos liberados del servidor."),
+            backgroundColor: Colors.green,
+          )
+        );
+        refreshData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Error en limpieza: $e"), backgroundColor: Colors.redAccent)
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isCleaning = false);
+    }
   }
 
   Future<void> _handleBulkDownload() async {
@@ -357,6 +486,12 @@ class DashboardScreenState extends State<DashboardScreen> {
                               style: OutlinedButton.styleFrom(foregroundColor: Colors.tealAccent, side: BorderSide(color: Colors.tealAccent.withOpacity(0.5))),
                             ),
                           ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed: () => _orderService.shareOrderAudio(order, isFinal: false),
+                            icon: const Icon(Icons.share_outlined, color: Colors.tealAccent),
+                            tooltip: "Compartir Muestra",
+                          ),
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -378,11 +513,28 @@ class DashboardScreenState extends State<DashboardScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () => _orderService.openUrl(order.finalAudioUrl, forceDownload: true),
+                              onPressed: (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.ENTREGADO) 
+                                ? () => _orderService.openUrl(order.finalAudioUrl, forceDownload: true)
+                                : null,
                               icon: const Icon(Icons.download_rounded),
                               label: const Text("Descargar"),
-                              style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent, side: BorderSide(color: Colors.redAccent.withOpacity(0.5))),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.redAccent, 
+                                side: BorderSide(color: Colors.redAccent.withOpacity(0.5))
+                              ),
                             ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed: (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.ENTREGADO)
+                              ? () => _orderService.shareOrderAudio(order, isFinal: true)
+                              : null,
+                            icon: Icon(Icons.share_rounded, 
+                              color: (order.status == OrderStatus.AUDIO_LISTO || order.status == OrderStatus.ENTREGADO) 
+                                ? Colors.redAccent 
+                                : Colors.white10
+                            ),
+                            tooltip: "Compartir Producto Final",
                           ),
                         ],
                       ),
@@ -554,6 +706,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                               name: file.name,
                               size: bytes.length,
                               bytes: bytes,
+                              path: kIsWeb ? null : file.path, // En Web el path es null
                             );
                             isDragging = false;
                           });
@@ -652,7 +805,6 @@ class DashboardScreenState extends State<DashboardScreen> {
 
                     // 2. Enviar a n8n si hay archivo nuevo
                     if (selectedFile != null) {
-                      // Regla simple: si es mp3 -> base_audio, si no -> script_file
                       String ref = 'script_file_url';
                       final extension = selectedFile!.extension?.toLowerCase() ?? 
                                      selectedFile!.name.split('.').last.toLowerCase();
@@ -661,45 +813,17 @@ class DashboardScreenState extends State<DashboardScreen> {
                         ref = 'base_audio_url';
                       }
 
-                      try {
-                        final n8nUrl = await _n8nService.uploadFile(
-                          clientName: savedOrder.clientName,
-                          orderId: savedOrder.id.toString(),
-                          file: selectedFile!,
-                          structuralReference: ref,
+                      UploadService().startUpload(
+                        clientName: savedOrder.clientName,
+                        orderId: savedOrder.id.toString(),
+                        file: selectedFile!,
+                        structuralReference: ref,
+                      );
+
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("🚀 Subida de archivo iniciada"), backgroundColor: Color(0xFF7C3AED))
                         );
-
-                        if (n8nUrl != null) {
-                          // Si n8n devolvió URL, actualizamos Supabase
-                          print("Actualizando orden con URL de n8n: $n8nUrl");
-                          OrderModel updatedOrder;
-                          if (ref == 'script_file_url') {
-                             updatedOrder = savedOrder.copyWith(scriptFileUrl: n8nUrl);
-                          } else {
-                             updatedOrder = savedOrder.copyWith(baseAudioUrl: n8nUrl);
-                          }
-                          await _orderService.updateOrder(updatedOrder);
-                        } else {
-                           print("n8n no devolvió URL, el archivo se envió pero no se enlazó.");
-                        }
-
-                      } catch (n8nError) {
-                        print("Advertencia n8n: $n8nError");
-                        // No lanzamos error para permitir que el flujo de guardado continúe
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Orden guardada, pero hubo un problema enviando el archivo a n8n.'),
-                              backgroundColor: Colors.orange,
-                              duration: Duration(seconds: 5),
-                            )
-                          );
-                        }
-                        // Regresamos aquí para cerrar el diálogo
-                        if (!mounted) return;
-                        Navigator.pop(context);
-                        refreshData();
-                        return;
                       }
                     }
                     
@@ -808,6 +932,7 @@ class DashboardScreenState extends State<DashboardScreen> {
     required Function(DateTime) onTimeSelected,
   }) {
     final times = [
+      {'label': 'DURANTE EL DÍA', 'hour': 23, 'minute': 59},
       {'label': '10:00 AM', 'hour': 10, 'minute': 0},
       {'label': '11:00 AM', 'hour': 11, 'minute': 0},
       {'label': '12:00 PM', 'hour': 12, 'minute': 0},
@@ -898,6 +1023,12 @@ class DashboardScreenState extends State<DashboardScreen> {
     
     // Lógica de filtrado unificada para UI y Selección
     final filteredOrders = _orders.where((order) {
+      if (_showMaintenanceOnly) {
+        final alertThreshold = DateTime.now().subtract(Duration(days: (_maintenanceDays / 2).floor()));
+        return order.createdAt.isBefore(alertThreshold) && 
+               (order.scriptFileUrl != null || order.finalAudioUrl != null) &&
+               order.status != OrderStatus.ANULADO;
+      }
       // Filtro de anulados
       if (_statusFilter == null && order.status == OrderStatus.ANULADO) return false;
       // Filtro de estado
@@ -980,6 +1111,8 @@ class DashboardScreenState extends State<DashboardScreen> {
             // Buscador y Filtros
             _buildFilterBar(),
             
+            // Contenido principal del Dashboard
+            const SizedBox(height: 10),
             const SizedBox(height: 20),
             Expanded(
               child: StreamBuilder<List<OrderModel>>(
@@ -989,10 +1122,19 @@ class DashboardScreenState extends State<DashboardScreen> {
                   List<OrderModel> sourceList = snapshot.hasData ? snapshot.data! : _orders;
                    
                   // 1. Filtrado de Base (No anulados a menos que se pida)
-                  if (_statusFilter != null) {
-                    sourceList = sourceList.where((o) => o.status == _statusFilter).toList();
+                  if (_showMaintenanceOnly) {
+                    final alertThreshold = DateTime.now().subtract(Duration(days: (_maintenanceDays / 2).floor()));
+                    sourceList = sourceList.where((o) => 
+                      o.createdAt.isBefore(alertThreshold) && 
+                      (o.scriptFileUrl != null || o.finalAudioUrl != null) &&
+                      o.status != OrderStatus.ANULADO
+                    ).toList();
                   } else {
-                    sourceList = sourceList.where((o) => o.status != OrderStatus.ANULADO).toList();
+                    if (_statusFilter != null) {
+                      sourceList = sourceList.where((o) => o.status == _statusFilter).toList();
+                    } else {
+                      sourceList = sourceList.where((o) => o.status != OrderStatus.ANULADO).toList();
+                    }
                   }
 
                   // 2. Filtrado por Búsqueda
@@ -1017,55 +1159,92 @@ class DashboardScreenState extends State<DashboardScreen> {
                       )
                     );
                   }
+
+                  // Lógica de Agrupación (Steve Jobs Vision: Orden y Prioridad)
+                  final groups = _groupOrders(sourceList);
                   
-                  // Siempre mostramos ListView, independientemente del tamaño de pantalla
+                  // Definimos el Orden Exacto pedido por el usuario
+                  // 1. Esta Semana (Siempre visible)
+                  // 2. Más Adelante
+                  // 3. Atrasados
+                  // 4. Entregados
+                  final groupKeys = groups.keys.where((k) {
+                    if (groups[k]!.isNotEmpty) return true;
+                    if (k.contains('SEMANA')) return true; // Mantener Esta Semana visible aunque esté vacía
+                    return false;
+                  }).toList();
+                  
                   return ListView.builder(
-                    itemCount: sourceList.length,
-                    itemBuilder: (context, index) => Padding(
-                      padding: const EdgeInsets.only(bottom: 16.0), // Espaciado entre items
-                      child: OrderCardPremium(
-                        order: sourceList[index], 
-                        onEdit: () => _showOrderForm(order: sourceList[index]),
-                        onTap: () => showOrderDetail(sourceList[index], viewingUser: _currentUser),
-                        isSelected: _selectedOrderIds.contains(sourceList[index].id),
-                        onSelect: (val) {
-                          setState(() {
-                            if (val == true) {
-                              _selectedOrderIds.add(sourceList[index].id!);
-                            } else {
-                              _selectedOrderIds.remove(sourceList[index].id);
-                            }
-                          });
-                        },
-                        onDelete: (order) async {
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              backgroundColor: const Color(0xFF16161A),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                              title: const Text('¿Mover a papelera?', style: TextStyle(color: Colors.white)),
-                              content: const Text('El pedido dejará de ser visible en las secciones activas.', style: TextStyle(color: Colors.white70)),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('CANCELAR')),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context, true), 
-                                  child: const Text('MOVER', style: TextStyle(color: Colors.redAccent))
+                    itemCount: groupKeys.length,
+                    itemBuilder: (context, groupIndex) {
+                      final category = groupKeys[groupIndex];
+                      final categoryOrders = groups[category]!;
+                      final color = _getGroupColor(category);
+                      final isCollapsed = _collapsedGroups.contains(category);
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildGroupHeader(category, categoryOrders.length, color, isCollapsed),
+                          if (!isCollapsed)
+                            categoryOrders.isEmpty 
+                              ? Padding(
+                                  padding: const EdgeInsets.only(left: 40.0, bottom: 24.0),
+                                  child: Text(
+                                    "No hay pedidos pendientes.", 
+                                    style: TextStyle(color: Colors.white.withOpacity(0.15), fontSize: 13, fontStyle: FontStyle.italic)
+                                  ),
+                                )
+                              : Column(
+                                  children: categoryOrders.map((order) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 16.0),
+                                    child: OrderCardPremium(
+                                      order: order, 
+                                      onEdit: () => _showOrderForm(order: order),
+                                      onTap: () => showOrderDetail(order, viewingUser: _currentUser),
+                                      isSelected: _selectedOrderIds.contains(order.id),
+                                      onSelect: (val) {
+                                        setState(() {
+                                          if (val == true) {
+                                            _selectedOrderIds.add(order.id!);
+                                          } else {
+                                            _selectedOrderIds.remove(order.id);
+                                          }
+                                        });
+                                      },
+                                      onDelete: (order) async {
+                                        final confirm = await showDialog<bool>(
+                                          context: context,
+                                          builder: (context) => AlertDialog(
+                                            backgroundColor: const Color(0xFF16161A),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                            title: const Text('¿Mover a papelera?', style: TextStyle(color: Colors.white)),
+                                            content: const Text('El pedido dejará de ser visible en las secciones activas.', style: TextStyle(color: Colors.white70)),
+                                            actions: [
+                                              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('CANCELAR')),
+                                              TextButton(
+                                                onPressed: () => Navigator.pop(context, true), 
+                                                child: const Text('MOVER', style: TextStyle(color: Colors.redAccent))
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                        if (confirm == true) {
+                                           try {
+                                             await _orderService.updateOrderStatus(order.id!, OrderStatus.ANULADO);
+                                             refreshData();
+                                           } catch (e) {
+                                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
+                                           }
+                                        }
+                                      },
+                                      showEditButton: _currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.control_calidad,
+                                    ),
+                                  )).toList(),
                                 ),
-                              ],
-                            ),
-                          );
-                          if (confirm == true) {
-                             try {
-                               await _orderService.updateOrderStatus(order.id!, OrderStatus.ANULADO);
-                               refreshData();
-                             } catch (e) {
-                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
-                             }
-                          }
-                        },
-                        showEditButton: _currentUser?.role == UserRole.admin || _currentUser?.role == UserRole.control_calidad,
-                      ),
-                    ),
+                        ],
+                      );
+                    },
                   );
                 },
               ),
@@ -1120,6 +1299,36 @@ class DashboardScreenState extends State<DashboardScreen> {
           icon: Icon(Icons.timer, color: _sortByDelivery ? Colors.orangeAccent : Colors.white24),
           onPressed: () => setState(() => _sortByDelivery = true),
         ),
+
+        if (_showMaintenanceOnly)
+          Padding(
+            padding: const EdgeInsets.only(left: 8.0),
+            child: InkWell(
+              onTap: () => toggleMaintenanceFilter(false),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.orangeAccent.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.orangeAccent, width: 0.5),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 16),
+                    const SizedBox(width: 8),
+                    const Text("Modo Mantenimiento", style: TextStyle(color: Colors.orangeAccent, fontSize: 12)),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () => toggleMaintenanceFilter(false),
+                      child: const Icon(Icons.close, color: Colors.orangeAccent, size: 14),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -1378,7 +1587,9 @@ class DashboardScreenState extends State<DashboardScreen> {
                   },
                   child: _buildValueBox(
                     label: 'Hora',
-                    value: DateFormat('hh:mm a', 'es').format(selectedDate).toUpperCase(),
+                    value: (selectedDate.hour == 23 && selectedDate.minute == 59)
+                      ? "DURANTE EL DÍA"
+                      : DateFormat('hh:mm a', 'es').format(selectedDate).toUpperCase(),
                     icon: Icons.access_time_rounded,
                   ),
                 ),
@@ -1409,5 +1620,131 @@ class DashboardScreenState extends State<DashboardScreen> {
       showCheckmark: false,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
     );
+  }
+
+  // MÉTODOS DE AGRUPACIÓN (Steve Jobs Vision)
+
+  Map<String, List<OrderModel>> _groupOrders(List<OrderModel> orders) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    // Calcular inicio y fin de la semana actual (Lunes a Domingo)
+    final monday = today.subtract(Duration(days: today.weekday - 1));
+    final sunday = monday.add(const Duration(days: 6));
+    final weekLabel = "ESTA SEMANA (${DateFormat('dd/MM', 'es').format(monday)} - ${DateFormat('dd/MM', 'es').format(sunday)})";
+
+    // El orden de las llaves define el orden de aparición en el Map si se itera sobre keys
+    final Map<String, List<OrderModel>> groups = {
+      weekLabel: [],
+      '🔴 CON HORA DE ENTREGA': [],
+      '🚀 MÁS ADELANTE': [],
+      '⚠️ ATRASADOS': [],
+      '✅ ENTREGADOS': [],
+    };
+
+    for (var order in orders) {
+      if (order.status == OrderStatus.ENTREGADO) {
+        groups['✅ ENTREGADOS']!.add(order);
+        continue;
+      }
+
+      final dueDate = DateTime(order.deliveryDueAt.year, order.deliveryDueAt.month, order.deliveryDueAt.day);
+      
+      // 1. Clasificación por Prioridad (Si tiene hora específica)
+      if (order.deliveryDueAt.hour != 23 || order.deliveryDueAt.minute != 59) {
+        groups['🔴 CON HORA DE ENTREGA']!.add(order);
+      } 
+
+      // 2. Clasificación Temporal
+      if (dueDate.isBefore(monday)) {
+        // Pedidos de semanas/meses anteriores
+        groups['⚠️ ATRASADOS']!.add(order);
+      } else if (dueDate.isBefore(sunday) || dueDate.isAtSameMomentAs(sunday)) {
+        // Dentro de la semana actual (Lunes a Domingo)
+        groups[weekLabel]!.add(order);
+      } else {
+        // Futuro
+        groups['🚀 MÁS ADELANTE']!.add(order);
+      }
+    }
+
+    return groups;
+  }
+
+  Widget _buildGroupHeader(String title, int count, Color color, bool isCollapsed) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 24.0, bottom: 16.0, left: 4.0),
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            if (_collapsedGroups.contains(title)) {
+              _collapsedGroups.remove(title);
+            } else {
+              _collapsedGroups.add(title);
+            }
+          });
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Row(
+          children: [
+            AnimatedRotation(
+              duration: const Duration(milliseconds: 200),
+              turns: isCollapsed ? -0.25 : 0, // -90 grados si está colapsado
+              child: Icon(Icons.keyboard_arrow_down_rounded, color: color, size: 24),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              width: 4,
+              height: 16,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(2),
+                boxShadow: [
+                  BoxShadow(color: color.withOpacity(0.5), blurRadius: 8, spreadRadius: 1),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white.withOpacity(0.1)),
+              ),
+              child: Text(
+                count.toString(),
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.5),
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const Expanded(child: Divider(indent: 20, color: Colors.white10, thickness: 0.5)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _getGroupColor(String category) {
+    if (category.contains('HORA DE') || category.contains('ATRASADOS')) return Colors.redAccent;
+    if (category.contains('HOY')) return const Color(0xFF7C3AED);
+    if (category.contains('MAÑANA')) return Colors.orangeAccent;
+    if (category.contains('SEMANA')) return Colors.tealAccent;
+    if (category.contains('ADELANTE')) return Colors.blueAccent;
+    if (category.contains('ENTREGADOS')) return Colors.white30;
+    return Colors.blueAccent;
   }
 }

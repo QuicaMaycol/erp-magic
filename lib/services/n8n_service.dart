@@ -1,214 +1,85 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:file_picker/file_picker.dart';
-import 'package:http_parser/http_parser.dart';
+import '../supabase_config.dart';
 
 class N8nService {
-  final String _webhookUrl = 'https://mqwebhook.dashbportal.com/webhook/subir-archivo-erp';
-  final String _bulkZipWebhookUrl = 'https://mqwebhook.dashbportal.com/webhook/d175c2d6-ad82-4cd6-bff3-06e19b4add25';
+  static const String _baseUrl = SupabaseConfig.n8nBaseUrl;
+  
+  final String _webhookUrl = '$_baseUrl/webhook/subir-archivo-erp';
+  final String _bulkZipWebhookUrl = '$_baseUrl/webhook/d175c2d6-ad82-4cd6-bff3-06e19b4add25';
+  final String _cleanupWebhookUrl = '$_baseUrl/webhook/3ae47e48-2af5-4eba-a72b-a16a1f707d34';
 
-  /// Retorna la URL del archivo si n8n la devuelve en el campo 'file_url', o null si no.
-  Future<String?> uploadFile({
+  /// Envía una notificación a n8n con la URL del archivo ya subido a Supabase
+  Future<String?> notifyN8n({
     required String clientName,
     required String orderId,
-    required PlatformFile file,
-    required String structuralReference, 
+    required String fileUrl,
+    required String fileName,
+    required String storagePath,
+    required String structuralReference,
   }) async {
-    
-    // ... (Lógica de determinación de tipo y nombre igual que antes) ...
-    // 1. Determinar file_type (Mantenemos lógica dinámica para soportar audio si es necesario)
-    String fileType;
-    if (structuralReference == 'script_file_url') {
-      fileType = 'word';
-    } else if (structuralReference == 'base_audio_url') {
-      fileType = 'mp3';
-    } else if (structuralReference == 'final_audio_url') {
-      fileType = 'final'; 
-    } else if (structuralReference == 'audio_muestra_url') {
-      fileType = 'muestra';
-    } else if (structuralReference == 'project_file_url') {
-      fileType = 'aup3';
-    } else {
-      fileType = 'word'; // Fallback por defecto
-    }
+    final payload = {
+      'order_id': orderId,
+      'client_name': clientName,
+      'file_url': fileUrl,
+      'file_name': fileName,
+      'storage_path': storagePath,
+      'column': structuralReference,
+    };
 
-    // 2. Preparar el nombre de archivo limpio
-    final fileName = file.name;
-    final ext = file.extension?.toLowerCase() ?? 
-                (fileName.contains('.') ? fileName.split('.').last.toLowerCase() : 'dat');
-    final safeClientName = clientName.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final newFileName = '${safeClientName}_${fileType}_$timestamp.$ext';
-
-    // 3. Determinar MediaType
-    MediaType? mediaType;
-    if (ext == 'pdf') mediaType = MediaType('application', 'pdf');
-    else if (ext == 'doc') mediaType = MediaType('application', 'msword');
-    else if (ext == 'docx') mediaType = MediaType('application', 'vnd.openxmlformats-officedocument.wordprocessingml.document');
-    else if (ext == 'mp3') mediaType = MediaType('audio', 'mpeg');
-    else if (ext == 'wav') mediaType = MediaType('audio', 'wav');
-    else if (ext == 'txt') mediaType = MediaType('text', 'plain');
-    else mediaType = MediaType('application', 'octet-stream');
-
-    print('Iniciando subida HTTP POST a: $_webhookUrl');
-    print('Datos: Client=$clientName, Order=$orderId, FileType=$fileType, FileName=$newFileName');
+    final uri = Uri.parse(_webhookUrl).replace(queryParameters: payload);
+    print('🔔 Notificando a n8n: $fileUrl');
 
     try {
-      // 4. Crear la petición Multipart
-      // Agregamos metadatos a la URL para que n8n los detecte siempre (evita problemas con Binary File)
-      final uri = Uri.parse(_webhookUrl).replace(queryParameters: {
-        'order_id': orderId,
-        'file_type': fileType,
-        'client_name': clientName,
-        'desired_filename': newFileName,
-        'column': structuralReference, // Enviamos el nombre real de la columna
-      });
-      
-      var request = http.MultipartRequest('POST', uri);
-      
-      // Campos de texto obligatorios
-      request.fields['order_id'] = orderId;
-      request.fields['client_name'] = clientName;
-      request.fields['file_type'] = fileType;
-      request.fields['desired_filename'] = newFileName; 
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
+      ).timeout(const Duration(minutes: 30));
 
-      // 5. Adjuntar archivo
-      http.MultipartFile multipartFile;
-      
-      if (file.bytes != null) {
-        multipartFile = http.MultipartFile.fromBytes(
-          'data', 
-          file.bytes!,
-          filename: newFileName,
-          contentType: mediaType,
-        );
-      } else if (file.path != null) {
-        multipartFile = await http.MultipartFile.fromPath(
-          'data', 
-          file.path!,
-          filename: newFileName,
-          contentType: mediaType,
-        );
-      } else {
-        throw Exception("El archivo no tiene ruta ni bytes.");
-      }
-
-      request.files.add(multipartFile);
-
-      // 6. Enviar
-      var streamedResponse = await request.send();
-      var response = await http.Response.fromStream(streamedResponse);
-
-      // 7. Validar respuesta
-      print('Status Code: ${response.statusCode}');
-      print('Response Body: ${response.body}');
+      print('📡 Respuesta n8n: ${response.statusCode}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        print("✅ Subida exitosa.");
-        
-        // Intentar parsear la URL de respuesta
-        try {
-          final jsonResponse = jsonDecode(response.body);
-          print("🔍 Depuración N8N - Cuerpo: ${response.body}");
-
-          // Función local para buscar URL en cualquier objeto (Mapa o Lista)
-          String? findUrl(dynamic obj, String targetRef) {
-            if (obj is Map) {
-              final keys = obj.keys.map((k) => k.toString().toLowerCase()).toList();
-              final targetLower = targetRef.toLowerCase();
-
-              // 1. Prioridad: claves directas de URL (Exactas o Genéricas)
-              final possibleKeys = ['file_url', 'url', 'link', 'webViewLink', 'webContentLink', targetRef];
-              for (final key in possibleKeys) {
-                final normalizedKey = key.toLowerCase();
-                
-                // Búsqueda manual para evitar TypeError en Web
-                dynamic actualKey;
-                for (final k in obj.keys) {
-                  if (k.toString().toLowerCase() == normalizedKey) {
-                    actualKey = k;
-                    break;
-                  }
-                }
-                
-                if (actualKey != null && obj[actualKey] != null) {
-                  final val = obj[actualKey].toString().trim();
-                  if (val.startsWith('http') || (val.length > 20 && !val.contains(' '))) {
-                    print("✅ Coincidencia encontrada en clave: $actualKey");
-                    return val;
-                  }
-                }
-              }
-
-              // 2. Fallback: buscar cualquier clave que CONTENGA el targetRef
-              for (final key in obj.keys) {
-                if (key.toString().toLowerCase().contains(targetLower)) {
-                  final val = obj[key].toString().trim();
-                  if (val.startsWith('http') || (val.length > 20 && !val.contains(' '))) {
-                    return val;
-                  }
-                }
-              }
-
-              // 3. Búsqueda recursiva en sub-objetos
-              for (final value in obj.values) {
-                if (value is Map || value is List) {
-                  final found = findUrl(value, targetRef);
-                  if (found != null) return found;
-                }
-              }
-            } else if (obj is List) {
-              for (final item in obj) {
-                final found = findUrl(item, targetRef);
-                if (found != null) return found;
-              }
-            }
-            return null;
-          }
-
-          final extractedUrl = findUrl(jsonResponse, structuralReference);
-          
-          // Meora: Si no se encontró el específico, buscar cualquier cosa que parezca un ID de Drive o URL
-          final fallbackUrl = extractedUrl ?? findUrl(jsonResponse, 'id') ?? findUrl(jsonResponse, 'project_file_url');
-
-          if (fallbackUrl != null && fallbackUrl.isNotEmpty) {
-            String finalUrl = fallbackUrl;
-            if (!finalUrl.startsWith('http')) {
-              // Si es un ID corto (Drive), construir URL full
-              finalUrl = 'https://drive.google.com/file/d/$finalUrl/view';
-            }
-            print("✅ URL final extraída: $finalUrl");
-            return finalUrl;
-          }
-          
-          print("⚠️ No se encontró la clave '$structuralReference' ni fallbacks en el JSON.");
-        } catch (e) {
-          print("⚠️ Error procesando JSON de n8n: $e");
+        final jsonResponse = jsonDecode(response.body);
+        if (jsonResponse['message'] == 'Workflow was started') {
+          return "PENDING_IN_N8N";
         }
-        
-        return null; // Éxito pero sin URL
-      } else {
-        // Manejo especial error n8n sin respuesta
-        if (response.statusCode == 500 && response.body.contains("No item to return was found")) {
-           print("⚠️ N8N Warning: 'No item to return'. No hay URL disponible.");
-           return null;
-        }
-        
-        throw Exception('Error del servidor (${response.statusCode}): ${response.body}');
+        return _extractUrlFromResponse(jsonResponse, structuralReference);
       }
-
+      return null;
     } catch (e) {
-      print("❌ Excepción de conexión: $e");
-      throw Exception('Error de conexión: $e');
+      print("❌ Error notificando a n8n: $e");
+      return null;
     }
+  }
+
+  String? _extractUrlFromResponse(dynamic jsonResponse, String targetRef) {
+    String? findUrl(dynamic obj, String target) {
+      if (obj is Map) {
+        final possibleKeys = ['file_url', 'url', 'link', 'webViewLink', target];
+        for (final key in possibleKeys) {
+          if (obj[key] != null) return obj[key].toString();
+        }
+        for (final value in obj.values) {
+          final found = findUrl(value, target);
+          if (found != null) return found;
+        }
+      } else if (obj is List) {
+        for (final item in obj) {
+          final found = findUrl(item, target);
+          if (found != null) return found;
+        }
+      }
+      return null;
+    }
+    return findUrl(jsonResponse, targetRef);
   }
 
   /// Solicita a n8n la generación de un archivo ZIP con varios audios
   Future<String?> generateBulkZip(List<Map<String, String>> filesData) async {
     try {
       print("Solicitando generación de ZIP masivo para ${filesData.length} archivos...");
-      print("POST a: $_bulkZipWebhookUrl");
-
+      
       final response = await http.post(
         Uri.parse(_bulkZipWebhookUrl),
         headers: {'Content-Type': 'application/json'},
@@ -219,19 +90,18 @@ class N8nService {
       );
 
       print("Status Code ZIP: ${response.statusCode}");
-      print("Response Body ZIP: '${response.body}'");
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        if (response.body.trim().isEmpty) {
-          print("⚠️ Alerta: El servidor respondió con éxito pero el cuerpo está vacío. Verifique el nodo 'Respond to Webhook' en n8n.");
-          return null;
-        }
+        if (response.body.trim().isEmpty) return null;
 
         final jsonResponse = jsonDecode(response.body);
-        
-        // Intentar encontrar la URL de diversas formas igual que en uploadFile
         if (jsonResponse is Map) {
-          return jsonResponse['zip_url'] ?? jsonResponse['url'] ?? jsonResponse['file_url'] ?? jsonResponse['link'] ?? jsonResponse['id'];
+          return jsonResponse['zip_url'] ?? 
+                 jsonResponse['url'] ?? 
+                 jsonResponse['file_url'] ?? 
+                 jsonResponse['link'] ?? 
+                 jsonResponse['webViewLink'] ?? 
+                 jsonResponse['id'];
         } else if (jsonResponse is List && jsonResponse.isNotEmpty) {
           final first = jsonResponse.first;
           if (first is Map) {
@@ -241,6 +111,55 @@ class N8nService {
       }
     } catch (e) {
       print("Error solicitando ZIP masivo: $e");
+    }
+    return null;
+  }
+
+  /// Solicita a n8n la eliminación física de archivos y actualización de DB
+  Future<bool> triggerStorageCleanup({required int orderId, required List<String> filePaths}) async {
+    try {
+      print("🗑️ Solicitando Limpieza Sincronizada a n8n para Pedido #$orderId...");
+      
+      final response = await http.post(
+        Uri.parse(_cleanupWebhookUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+            'order_id': orderId,
+            'files': filePaths.map((p) => {'path': p}).toList(),
+            'timestamp': DateTime.now().toIso8601String(),
+        }),
+      );
+
+      print("📡 Respuesta Limpieza n8n: ${response.statusCode}");
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (e) {
+      print("❌ Error en triggerStorageCleanup: $e");
+      return false;
+    }
+  }
+
+  /// Solicita a n8n el rescate masivo de proyectos del día 27 hacia Google Drive
+  Future<String?> triggerMaintenanceRescue() async {
+    try {
+      print("🚀 Solicitando Rescate Masivo (Día 27)...");
+      
+      final response = await http.post(
+        Uri.parse(_cleanupWebhookUrl), // Usa el mismo Webhook o uno específico si se configuró distinto
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'action': 'bulk_rescue_day_27',
+          'timestamp': DateTime.now().toIso8601String(),
+        }),
+      );
+
+      print("📡 Respuesta Rescate: ${response.statusCode}");
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final jsonResponse = jsonDecode(response.body);
+        return jsonResponse['drive_folder_url'] ?? jsonResponse['url'] ?? jsonResponse['link'];
+      }
+    } catch (e) {
+      print("❌ Error en Rescate Masivo: $e");
     }
     return null;
   }

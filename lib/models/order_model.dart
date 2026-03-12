@@ -66,9 +66,17 @@ class OrderModel {
   // Lógica de Urgencia (Puntos de color)
   Map<String, dynamic> get urgencyStyle {
     final diff = deliveryDueAt.difference(DateTime.now()).inHours;
+    
+    // Si es "Durante el día" (Representado por 23:59), no es urgente
+    final bool isAllDay = deliveryDueAt.hour == 23 && deliveryDueAt.minute == 59;
+    
     if (diff < 0) return {'color': Colors.redAccent, 'label': 'RETRASADO'};
-    if (diff < 4) return {'color': Colors.orangeAccent, 'label': 'URGENTE'};
-    if (diff < 12) return {'color': Colors.yellowAccent, 'label': 'PRIORIDAD'};
+    
+    if (!isAllDay) {
+      if (diff < 4) return {'color': Colors.orangeAccent, 'label': 'URGENTE'};
+      if (diff < 12) return {'color': Colors.yellowAccent, 'label': 'PRIORIDAD'};
+    }
+    
     return {'color': Colors.greenAccent, 'label': 'A TIEMPO'};
   }
 
