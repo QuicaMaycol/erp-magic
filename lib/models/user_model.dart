@@ -4,6 +4,7 @@ enum UserRole {
   recepcion,
   generador,
   editor,
+  conta,
 }
 
 class UserModel {

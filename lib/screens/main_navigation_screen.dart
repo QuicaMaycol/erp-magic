@@ -5,6 +5,9 @@ import 'dart:ui';
 import 'package:intl/intl.dart';
 import 'dashboard_screen.dart';
 import 'users_management_screen.dart';
+import 'clientes_screen.dart';
+import 'clientes_form_screen.dart';
+import 'egresos_screen.dart';
 import '../models/user_model.dart';
 import '../models/order_model.dart';
 import '../services/auth_service.dart';
@@ -138,7 +141,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             }
           },
         ),
-        roles: [UserRole.admin, UserRole.control_calidad, UserRole.recepcion, UserRole.generador, UserRole.editor],
+        roles: [UserRole.admin, UserRole.control_calidad, UserRole.recepcion, UserRole.generador, UserRole.editor, UserRole.conta],
       ),
       _TabItem(
         title: 'Recepción',
@@ -167,6 +170,27 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         selectedIcon: const Icon(Icons.music_note),
         view: EditorView(currentUser: user),
         roles: [UserRole.admin, UserRole.control_calidad, UserRole.editor],
+      ),
+      _TabItem(
+        title: 'Clientes',
+        icon: const Icon(Icons.people_alt_outlined),
+        selectedIcon: const Icon(Icons.people_alt),
+        view: const ClientesScreen(),
+        roles: [UserRole.admin, UserRole.conta],
+      ),
+      _TabItem(
+        title: 'Formulario',
+        icon: const Icon(Icons.app_registration_outlined),
+        selectedIcon: const Icon(Icons.app_registration),
+        view: const ClientesFormScreen(),
+        roles: [UserRole.admin, UserRole.conta],
+      ),
+      _TabItem(
+        title: 'Egresos',
+        icon: const Icon(Icons.account_balance_wallet_outlined),
+        selectedIcon: const Icon(Icons.account_balance_wallet),
+        view: const EgresosScreen(),
+        roles: [UserRole.admin, UserRole.conta],
       ),
     ];
 
@@ -595,14 +619,12 @@ class _InicioViewState extends State<_InicioView> {
 
         final deliveredToday = allOrders.where((o) => 
           o.status == OrderStatus.AUDIO_LISTO && 
-          o.editionEndedAt != null &&
-          o.editionEndedAt!.day == today.day).length;
+          o.createdAt.month == today.month &&
+          o.createdAt.year == today.year).length;
 
         final readyMonth = allOrders.where((o) => 
-          (o.status == OrderStatus.AUDIO_LISTO || o.status == OrderStatus.ENTREGADO) && 
-          o.editionEndedAt != null &&
-          o.editionEndedAt!.month == today.month &&
-          o.editionEndedAt!.year == today.year).length; // Cálculos de Ventas (Steve Jobs Vision: Simplicidad y Datos que importan)
+          o.createdAt.month == today.month &&
+          o.createdAt.year == today.year).length; // Cálculos de Ventas (Steve Jobs Vision: Simplicidad y Datos que importan)
         final firstDayOfWeek = today.subtract(Duration(days: today.weekday - 1));
         final startOfWeek = DateTime(firstDayOfWeek.year, firstDayOfWeek.month, firstDayOfWeek.day);
         final salesWeek = allOrders
@@ -694,7 +716,7 @@ class _InicioViewState extends State<_InicioView> {
                               ],
                               Expanded(child: _buildMetricCard('Audios del Mes', readyMonth.toString(), Icons.analytics_outlined, Colors.cyanAccent)),
                               Expanded(child: _buildMetricCard('Urgentes Hoy', urgentToday.toString(), Icons.alarm_on_rounded, Colors.orangeAccent, onTap: () => setState(() => _activeFilter = 'URGENTES'))),
-                              Expanded(child: _buildMetricCard('Listos Hoy', deliveredToday.toString(), Icons.check_circle_outline, Colors.greenAccent, onTap: () => setState(() => _activeFilter = 'LISTOS'))),
+                              Expanded(child: _buildMetricCard('Listos del Mes', deliveredToday.toString(), Icons.check_circle_outline, Colors.greenAccent, onTap: () => setState(() => _activeFilter = 'LISTOS'))),
                             ],
                           )
                         else
@@ -708,7 +730,7 @@ class _InicioViewState extends State<_InicioView> {
                                 ],
                                 _buildMetricCard('Audios del Mes', readyMonth.toString(), Icons.analytics_outlined, Colors.cyanAccent),
                                 _buildMetricCard('Urgentes Hoy', urgentToday.toString(), Icons.alarm_on_rounded, Colors.orangeAccent, onTap: () => setState(() => _activeFilter = 'URGENTES')),
-                                _buildMetricCard('Listos Hoy', deliveredToday.toString(), Icons.check_circle_outline, Colors.greenAccent, onTap: () => setState(() => _activeFilter = 'LISTOS')),
+                                _buildMetricCard('Listos del Mes', deliveredToday.toString(), Icons.check_circle_outline, Colors.greenAccent, onTap: () => setState(() => _activeFilter = 'LISTOS')),
                               ],
                             ),
                           ),
@@ -1175,15 +1197,15 @@ class _InicioViewState extends State<_InicioView> {
               children: [
                 _buildLegendItem("PENDIENTE", const Color(0xFFEF4444)),
                 const SizedBox(width: 16),
-                _buildLegendItem("GENERACIÓN", const Color(0xFFF97316)),
+                _buildLegendItem("GENERACIÓN", const Color(0xFFD6B4FC)),
                 const SizedBox(width: 16),
                 _buildLegendItem("EDICIÓN", const Color(0xFFF59E0B)),
                 const SizedBox(width: 16),
                 _buildLegendItem("REVISIÓN", const Color(0xFF3B82F6)),
                 const SizedBox(width: 16),
-                _buildLegendItem("LISTO", const Color(0xFF10B981)),
+                _buildLegendItem("LISTO", const Color(0xFFFFEB3B)),
                 const SizedBox(width: 16),
-                _buildLegendItem("ENTREGADO", const Color(0xFFFFEB3B)),
+                _buildLegendItem("ENTREGADO", const Color(0xFF10B981)),
               ],
             ),
           ),

@@ -94,12 +94,20 @@ class OrderCardPremium extends StatelessWidget {
                             ),
                             const SizedBox(height: 8),
                             
-                            // Badges (Audio + Estado)
+                            // Badges (Audio + Estado + Urgencia)
                             Row(
                               children: [
                                 _buildBadge('AUDIO', const Color(0xFF7C3AED).withOpacity(0.2), const Color(0xFF7C3AED)),
                                 const SizedBox(width: 8),
                                 _buildBadge(style['label'] as String, mainColor.withOpacity(0.1), mainColor),
+                                if (!(order.deliveryDueAt.hour == 23 && order.deliveryDueAt.minute == 59)) ...[
+                                  const SizedBox(width: 8),
+                                  _buildBadge(
+                                    order.urgencyStyle['label'] as String,
+                                    (order.urgencyStyle['color'] as Color).withOpacity(0.1),
+                                    order.urgencyStyle['color'] as Color,
+                                  ),
+                                ],
                               ],
                             ),
                             const SizedBox(height: 16),

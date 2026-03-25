@@ -366,7 +366,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                           if (order.country != null && order.country!.isNotEmpty && order.price != null)
                             const SizedBox(width: 16),
                           if (order.price != null && viewingUser?.role != UserRole.control_calidad)
-                            Expanded(child: _buildDetailRow("PRECIO", "\$${order.price!.toStringAsFixed(2)}")),
+                            Expanded(child: _buildDetailRow("PRECIO", "${order.currency == 'PEN' ? 'S/' : '\$'} ${order.price!.toStringAsFixed(2)}")),
                        ],
                      ),
                      const SizedBox(height: 12),
@@ -655,6 +655,7 @@ class DashboardScreenState extends State<DashboardScreen> {
     final phoneController = TextEditingController(text: order?.phone);
     final paymentController = TextEditingController(text: order?.paymentMethod);
     final productController = TextEditingController(text: order?.product);
+    final currencyController = TextEditingController(text: order?.currency ?? 'USD');
     DateTime selectedDate = order?.deliveryDueAt ?? DateTime.now().add(const Duration(hours: 4));
     
     PlatformFile? selectedFile;
@@ -748,6 +749,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                           phoneController, 
                           countryController, 
                           priceController, 
+                          currencyController,
                           paymentController, 
                           isDragging, 
                           selectedFile, 
@@ -790,6 +792,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                        phone: phoneController.text.trim(),
                        paymentMethod: paymentController.text.trim(),
                        product: productController.text.trim(),
+                       currency: currencyController.text.trim(),
                        deliveryDueAt: selectedDate,
                       status: order?.status ?? OrderStatus.PENDIENTE,
                       scriptFileUrl: order?.scriptFileUrl, // Mantener anterior si existe
@@ -936,6 +939,7 @@ class DashboardScreenState extends State<DashboardScreen> {
       {'label': '10:00 AM', 'hour': 10, 'minute': 0},
       {'label': '11:00 AM', 'hour': 11, 'minute': 0},
       {'label': '12:00 PM', 'hour': 12, 'minute': 0},
+      {'label': '01:00 PM', 'hour': 13, 'minute': 0},
       {'label': '02:00 PM', 'hour': 14, 'minute': 0},
       {'label': '03:00 PM', 'hour': 15, 'minute': 0},
       {'label': '04:00 PM', 'hour': 16, 'minute': 0},
@@ -953,7 +957,7 @@ class DashboardScreenState extends State<DashboardScreen> {
             final isSelected = selectedDate.hour == hour && selectedDate.minute == minute;
             
             return Padding(
-              padding: const EdgeInsets.only(right: 8.0),
+              padding: const EdgeInsets.only(right: 6.0),
               child: InkWell(
                 onTap: () {
                   setDialogState(() {
@@ -967,10 +971,10 @@ class DashboardScreenState extends State<DashboardScreen> {
                   });
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: isSelected ? const Color(0xFF7C3AED).withOpacity(0.2) : Colors.white.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: isSelected ? const Color(0xFF7C3AED) : Colors.transparent,
                       width: 1,
@@ -980,7 +984,7 @@ class DashboardScreenState extends State<DashboardScreen> {
                     time['label'] as String,
                     style: TextStyle(
                       color: isSelected ? const Color(0xFF7C3AED) : Colors.white60,
-                      fontSize: 12,
+                      fontSize: 10,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                     ),
                   ),
@@ -1341,6 +1345,7 @@ class DashboardScreenState extends State<DashboardScreen> {
     TextEditingController phoneController,
     TextEditingController countryController,
     TextEditingController priceController,
+    TextEditingController currencyController,
     TextEditingController paymentController,
     bool isDragging,
     PlatformFile? selectedFile,
@@ -1388,8 +1393,47 @@ class DashboardScreenState extends State<DashboardScreen> {
           Expanded(
             flex: 2,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildField(priceController, 'Precio', icon: Icons.attach_money, keyboardType: TextInputType.number),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 1,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: currencyController.text,
+                            dropdownColor: const Color(0xFF16161A),
+                            isExpanded: true,
+                            icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF7C3AED)),
+                            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setDialogState(() {
+                                  currencyController.text = val;
+                                });
+                              }
+                            },
+                            items: const [
+                              DropdownMenuItem(value: 'USD', child: Text(' \$')),
+                              DropdownMenuItem(value: 'PEN', child: Text('S/')),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: _buildField(priceController, 'Precio', keyboardType: TextInputType.number),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 _buildQuickSelect(
                   setDialogState: setDialogState,

@@ -26,11 +26,13 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
   
   List<UserModel> _generators = [];
   List<UserModel> _editors = [];
+  List<UserModel> _allStaff = [];
   UserModel? _currentUser;
   String _searchQuery = '';
   OrderStatus? _statusFilter;
   
   bool _sortByDelivery = false; // false = createdAt DESC, true = deliveryDueAt ASC
+  final Set<String> _collapsedGroups = {};
 
   @override
   void initState() {
@@ -57,6 +59,8 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
       setState(() {
         _generators = gens;
         _editors = eds;
+        _allStaff = [...gens, ...eds];
+        _allStaff.sort((a, b) => a.name.compareTo(b.name));
         _currentUser = user;
       });
     }
@@ -104,8 +108,8 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
   }
 
   void _showAssignmentDialog(OrderModel order) {
-    UserModel? selectedGen = _generators.firstWhere((u) => u.id == order.generatorId, orElse: () => _generators.isNotEmpty ? _generators.first : UserModel(id: '', name: '', email: '', role: UserRole.generador, active: true));
-    UserModel? selectedEd = _editors.firstWhere((u) => u.id == order.editorId, orElse: () => _editors.isNotEmpty ? _editors.first : UserModel(id: '', name: '', email: '', role: UserRole.editor, active: true));
+    UserModel? selectedGen = _allStaff.firstWhere((u) => u.id == order.generatorId, orElse: () => _allStaff.isNotEmpty ? _allStaff.first : UserModel(id: '', name: '', email: '', role: UserRole.generador, active: true));
+    UserModel? selectedEd = _allStaff.firstWhere((u) => u.id == order.editorId, orElse: () => _allStaff.isNotEmpty ? _allStaff.first : UserModel(id: '', name: '', email: '', role: UserRole.editor, active: true));
 
     
     String? tempGenId = order.generatorId;
@@ -866,12 +870,12 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
                       const Text("ASIGNACIÓN DE PERSONAL", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
                       const SizedBox(height: 12),
                       
-                      // Dropdown Generador
-                      _buildDropdown("Generador", _generators, tempGenId, (val) => setDialogState(() => tempGenId = val), 
+                      // Dropdown Generador (Lista Unificada)
+                      _buildDropdown("Generador", _allStaff, tempGenId, (val) => setDialogState(() => tempGenId = val), 
                         enabled: (order.status == OrderStatus.PENDIENTE || order.status == OrderStatus.EN_GENERACION)),
                       const SizedBox(height: 12),
-                      // Dropdown Editor
-                      _buildDropdown("Editor", _editors, tempEdId, (val) => setDialogState(() => tempEdId = val),
+                      // Dropdown Editor (Lista Unificada)
+                      _buildDropdown("Editor", _allStaff, tempEdId, (val) => setDialogState(() => tempEdId = val),
                         enabled: (order.status == OrderStatus.PENDIENTE || order.status == OrderStatus.EN_GENERACION)),
 
                       const SizedBox(height: 20),
@@ -1043,10 +1047,43 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
               isExpanded: true,
               dropdownColor: const Color(0xFF222222),
               hint: Text("Seleccionar $label", style: const TextStyle(color: Colors.white24)),
-              items: users.map((u) => DropdownMenuItem(
-                value: u.id,
-                child: Text(u.name, style: TextStyle(color: enabled ? Colors.white : Colors.white38)),
-              )).toList(),
+              items: users.map((u) {
+                final isGen = u.role == UserRole.generador;
+                final roleColor = isGen ? const Color(0xFF7C3AED) : const Color(0xFF3B82F6);
+                
+                return DropdownMenuItem(
+                  value: u.id,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: roleColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        u.name, 
+                        style: TextStyle(
+                          color: enabled ? Colors.white : Colors.white38,
+                          fontSize: 13,
+                        )
+                      ),
+                      const Spacer(),
+                      Text(
+                        isGen ? "GEN" : "EDI",
+                        style: TextStyle(
+                          color: roleColor.withOpacity(0.5),
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
               onChanged: enabled ? onChanged : null,
             ),
           ),
@@ -1092,6 +1129,121 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
     
     // Formato: "Lunes 03/02 - 10:00"
     return "$dayName ${DateFormat('dd/MM - HH:mm').format(date)}";
+  }
+
+  // MÉTODOS DE AGRUPACIÓN (Steve Jobs Vision)
+
+  Map<String, List<OrderModel>> _groupOrders(List<OrderModel> orders) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    // Calcular inicio y fin de la semana actual (Lunes a Domingo)
+    final monday = today.subtract(Duration(days: today.weekday - 1));
+    final sunday = monday.add(const Duration(days: 6));
+    final weekLabel = "ESTA SEMANA (${DateFormat('dd/MM', 'es').format(monday)} - ${DateFormat('dd/MM', 'es').format(sunday)})";
+
+    // El orden de las llaves define el orden de aparición en el Map si se itera sobre keys
+    final Map<String, List<OrderModel>> groups = {
+      weekLabel: [],
+      '🔴 CON HORA DE ENTREGA': [],
+      '🚀 MÁS ADELANTE': [],
+      '⚠️ ATRASADOS': [],
+      '✅ ENTREGADOS': [],
+    };
+
+    for (var order in orders) {
+      if (order.status == OrderStatus.ENTREGADO) {
+        groups['✅ ENTREGADOS']!.add(order);
+        continue;
+      }
+
+      final dueDate = DateTime(order.deliveryDueAt.year, order.deliveryDueAt.month, order.deliveryDueAt.day);
+      
+      // 1. Clasificación por Prioridad (Si tiene hora específica)
+      if (order.deliveryDueAt.hour != 23 || order.deliveryDueAt.minute != 59) {
+        groups['🔴 CON HORA DE ENTREGA']!.add(order);
+      } 
+
+      // 2. Clasificación Temporal
+      if (dueDate.isBefore(monday)) {
+        // Pedidos de semanas/meses anteriores
+        groups['⚠️ ATRASADOS']!.add(order);
+      } else if (dueDate.isBefore(sunday) || dueDate.isAtSameMomentAs(sunday)) {
+        // Dentro de la semana actual (Lunes a Domingo)
+        groups[weekLabel]!.add(order);
+      } else {
+        // Futuro
+        groups['🚀 MÁS ADELANTE']!.add(order);
+      }
+    }
+
+    return groups;
+  }
+
+  Widget _buildGroupHeader(String title, int count, Color color, bool isCollapsed) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 24.0, bottom: 16.0, left: 4.0),
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            if (_collapsedGroups.contains(title)) {
+              _collapsedGroups.remove(title);
+            } else {
+              _collapsedGroups.add(title);
+            }
+          });
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Row(
+          children: [
+            AnimatedRotation(
+              duration: const Duration(milliseconds: 200),
+              turns: isCollapsed ? -0.25 : 0, // -90 grados si está colapsado
+              child: Icon(Icons.keyboard_arrow_down_rounded, color: color, size: 24),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              width: 4,
+              height: 16,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              title,
+              style: TextStyle(
+                color: color.withOpacity(0.9),
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: color.withOpacity(0.2)),
+              ),
+              child: Text(
+                count.toString(),
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const Spacer(),
+            if (isCollapsed)
+              Icon(Icons.unfold_more_rounded, color: color.withOpacity(0.3), size: 18),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -1155,27 +1307,50 @@ class _PremiumQCPanelState extends State<PremiumQCPanel> {
                   }
 
                   if (orders.isEmpty) {
-
                     return const Center(child: Text('No hay pedidos activos.', style: TextStyle(color: Colors.white38)));
                   }
 
-                  return ListView.builder(
-                    itemCount: orders.length,
-                    itemBuilder: (context, index) {
-                      final order = orders[index];
-                      final gen = _generators.firstWhere((u) => u.id == order.generatorId, orElse: () => UserModel(id: '', name: 'Pendiente', email: '', role: UserRole.generador, active: true));
-                      final edi = _editors.firstWhere((u) => u.id == order.editorId, orElse: () => UserModel(id: '', name: 'Pendiente', email: '', role: UserRole.editor, active: true));
+                  final groupedOrders = _groupOrders(orders);
+                  final List<Widget> listItems = [];
 
-                      
-                      return QCOrderCard(
-                        order: order,
-                        generator: gen,
-                        editor: edi,
-                        isSelected: false,
-                        onSelect: null,
-                        onTap: () => _showAssignmentDialog(order),
-                      );
-                    },
+                  groupedOrders.forEach((groupTitle, groupOrdersList) {
+                    if (groupOrdersList.isEmpty) return;
+
+                    final isCollapsed = _collapsedGroups.contains(groupTitle);
+                    Color groupColor = Colors.deepPurpleAccent;
+                    
+                    if (groupTitle.contains("⚠️")) groupColor = Colors.orangeAccent;
+                    if (groupTitle.contains("🔴")) groupColor = Colors.redAccent;
+                    if (groupTitle.contains("✅")) groupColor = Colors.greenAccent;
+                    if (groupTitle.contains("🚀")) groupColor = Colors.blueAccent;
+
+                    listItems.add(_buildGroupHeader(groupTitle, groupOrdersList.length, groupColor, isCollapsed));
+
+                    if (!isCollapsed) {
+                      for (var order in groupOrdersList) {
+                        final gen = _allStaff.firstWhere((u) => u.id == order.generatorId, orElse: () => UserModel(id: '', name: 'Pendiente', email: '', role: UserRole.generador, active: true));
+                        final edi = _allStaff.firstWhere((u) => u.id == order.editorId, orElse: () => UserModel(id: '', name: 'Pendiente', email: '', role: UserRole.editor, active: true));
+                        
+                        listItems.add(
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8.0),
+                            child: QCOrderCard(
+                              order: order,
+                              generator: gen,
+                              editor: edi,
+                              isSelected: false,
+                              onSelect: null,
+                              onTap: () => _showAssignmentDialog(order),
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  });
+
+                  return ListView(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    children: listItems,
                   );
                 },
               ),

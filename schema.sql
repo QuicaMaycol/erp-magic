@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS erp_magicvoice.users (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('admin', 'control_calidad', 'recepcion', 'generador', 'editor')),
+    role TEXT NOT NULL CHECK (role IN ('admin', 'control_calidad', 'recepcion', 'generador', 'editor', 'conta')),
     active BOOLEAN DEFAULT TRUE,
     confirmed BOOLEAN DEFAULT FALSE,
     fcm_token TEXT,

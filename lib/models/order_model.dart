@@ -36,6 +36,7 @@ class OrderModel {
   final String? paymentMethod;
   final String? product;
   final String? audioMuestraUrl;
+  final String? currency;
 
   OrderModel({
     this.id,
@@ -61,6 +62,7 @@ class OrderModel {
     this.paymentMethod,
     this.product,
     this.audioMuestraUrl,
+    this.currency,
   }) : createdAt = createdAt ?? DateTime.now();
 
   // Lógica de Urgencia (Puntos de color)
@@ -74,7 +76,7 @@ class OrderModel {
     
     if (!isAllDay) {
       if (diff < 4) return {'color': Colors.orangeAccent, 'label': 'URGENTE'};
-      if (diff < 12) return {'color': Colors.yellowAccent, 'label': 'PRIORIDAD'};
+      if (diff < 12) return {'color': Colors.redAccent, 'label': 'PRIORIDAD'};
     }
     
     return {'color': Colors.greenAccent, 'label': 'A TIEMPO'};
@@ -93,7 +95,7 @@ class OrderModel {
         };
       case OrderStatus.EN_GENERACION:
         return {
-          'color': const Color(0xFFF97316), // Naranja (Tailwind Orange 500)
+          'color': const Color(0xFFD6B4FC), // Lila Pastel
           'label': 'EN GENERACIÓN',
         };
       case OrderStatus.EDICION:
@@ -108,12 +110,12 @@ class OrderModel {
         };
       case OrderStatus.AUDIO_LISTO:
         return {
-          'color': const Color(0xFF10B981), // Verde (Tailwind Emerald 500 / Listo)
+          'color': const Color(0xFFFFEB3B), // Amarillo Brillante
           'label': 'LISTO',
         };
       case OrderStatus.ENTREGADO:
         return {
-          'color': const Color(0xFFFFEB3B), // Amarillo Brillante
+          'color': const Color(0xFF10B981), // Verde (Tailwind Emerald 500 / Listo)
           'label': 'ENTREGADO',
         };
       case OrderStatus.ANULADO:
@@ -186,6 +188,7 @@ class OrderModel {
         paymentMethod: json['payment_method'],
         product: json['product'],
         audioMuestraUrl: json['audio_muestra_url'],
+        currency: json['currency'],
       );
     } catch (e) {
       // Fallback en caso de error crítico de parseo
@@ -223,6 +226,7 @@ class OrderModel {
     String? paymentMethod,
     String? product,
     String? audioMuestraUrl,
+    String? currency,
     bool clearBaseAudio = false,
     bool clearFinalAudio = false,
     bool clearProjectFile = false,
@@ -251,6 +255,7 @@ class OrderModel {
       paymentMethod: paymentMethod ?? this.paymentMethod,
       product: product ?? this.product,
       audioMuestraUrl: audioMuestraUrl ?? this.audioMuestraUrl,
+      currency: currency ?? this.currency,
     );
   }
 
@@ -277,5 +282,6 @@ class OrderModel {
     'payment_method': paymentMethod,
     'product': product,
     'audio_muestra_url': audioMuestraUrl,
+    if (currency != null) 'currency': currency,
   };
 }

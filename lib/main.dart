@@ -7,6 +7,7 @@ import 'supabase_config.dart';
 import 'services/auth_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_navigation_screen.dart';
+import 'screens/public_client_form_screen.dart';
 import 'services/notification_service.dart';
 
 void main() async {
@@ -55,7 +56,10 @@ class MyApp extends StatelessWidget {
       supportedLocales: const [
         Locale('es', ''),
       ],
-      home: const AuthWrapper(),
+      routes: {
+        '/': (context) => const AuthWrapper(),
+        '/formulario-cliente': (context) => const PublicClientFormScreen(),
+      },
     );
   }
 }
